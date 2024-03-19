@@ -1,0 +1,79 @@
+///Script para baixar os mapas do Mapbiomas - coleção 8. 
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE 
+/// desenvolvido por AmbiGEO (2023).
+/// Scritp utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dr. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+
+// Collection do mapbioma
+var mapbiomas = 'projects/mapbiomas-workspace/public/collection8/mapbiomas_collection80_integration_v1';
+
+// Define a imagem collection 
+var mapbiomas = ee.Image(mapbiomas);
+print('Dado mapbiomas', mapbiomas);
+
+// Quais as bandas existentes 
+var bands = mapbiomas.bandNames();
+// Precisamos criar uma lista com as bandas
+var mylist = ee.List(bands);
+
+// Precisamos converter a band em uma string
+print('Banda 0', ee.String(ee.List(mapbiomas.bandNames()).get(0)));
+
+// Precisamos criar uma lista com as bandas
+var mylist = ee.List(bands).slice(0, 38, 1);
+print('lista de bandas pos slice', mylist);
+var mapbiomas = mapbiomas.select(mylist);
+
+// Palette color
+var palettes = require('users/mapbiomas/modules:Palettes.js').get('classification6');
+var vis = {
+  palette: palettes,
+  min: 0,
+  max: 49
+};
+print('Paleta de cores', palettes);
+
+// Região de interesse
+
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/SCCI');
+
+
+
+//Selecione a coleção que deseja
+var mapbioma1985 = mapbiomas.select('classification_1985').clip(roi)
+
+var mapbioma2003 = mapbiomas.select('classification_2003').clip(roi)
+
+var mapbioma2022 = mapbiomas.select('classification_2022').clip(roi)
+
+Map.addLayer(mapbioma1985,vis,'Uso 1985',false)
+Map.addLayer(mapbioma2003,vis,'Uso 2003',false)
+Map.addLayer(mapbioma2022,vis,'Uso 2022',false)
+
+Export.image.toDrive({
+  image: mapbioma1985,
+  folder: 'Map_biomas',
+  description: 'classification_1985',
+  region: roi,
+  scale: 30,
+  maxPixels: 1e13
+  })   
+  
+Export.image.toDrive({
+  image: mapbioma2003,
+  folder: 'Map_biomas',
+  description: 'classification_2003',
+  region: roi,
+  scale: 30,
+  maxPixels: 1e13
+  })   
+  
+  Export.image.toDrive({
+  image: mapbioma2022,
+  folder: 'Map_biomas',
+  description: 'classification_2022',
+  region: roi,
+  scale: 30,
+  maxPixels: 1e13
+  })   
+
