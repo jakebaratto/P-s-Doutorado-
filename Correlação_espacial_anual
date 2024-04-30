@@ -1,0 +1,351 @@
+/// Teste de regressão usando script do python, o principio 
+//**  Correlação linear de pearson deu certo - porém dados separados em dois períodos**//
+/// Um período só juntando todos os dados mensais (2004-2022)
+
+/// Área de estudo 
+
+// SCCI
+var roi = ee.FeatureCollection ('projects/ee-jakelinebarattogeo/assets/SCCI_disso')
+
+/// manguezal
+
+//var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso')
+Map.centerObject(roi,8)
+
+// Período de dados 
+
+var startdate = ee.Date.fromYMD(2004,1,1);
+var enddate = ee.Date.fromYMD(2014,12,31);
+
+var months = ee.List.sequence(1, 12)
+var years = ee.List.sequence(2004, 2013)
+
+/// DADOS MODIS PARA A REAMOSTRAGEM
+var modis = ee.ImageCollection('MODIS/006/MYD13Q1');
+
+// Filtrar as imagens das coleções para o período desejado
+var modisFiltered = modis.filterDate(startdate, enddate);
+
+// Selecionar a banda de interesse no MODIS NDVI (NDVI)
+var modisNDVI = modisFiltered.select('NDVI');
+
+// Definir a escala de reamostragem (250 metros)
+var scale = 250;
+
+
+// Função para reamostrar a imagem CHIRPS para a escala do MODIS NDVI
+var resampleImage = function(img) {
+  // Reamostrar a imagem CHIRPS para a escala do MODIS NDVI
+  var resampled = img.resample('bicubic').reproject({
+    crs: modisNDVI.first().projection(),
+    scale: scale
+  });
+  // Retornar a imagem reamostrada
+  return resampled;
+};
+
+/// Dados de precipitação utilizados 
+var chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+                  .filter(ee.Filter.date(startdate, enddate))
+
+print('1 - Numero de imagens',chirps.size().getInfo())
+
+
+// Mapear a função de reamostragem para a coleção CHIRPS
+var chirpsResampled =  chirps.map(resampleImage);
+
+
+
+// ##Função para agregar dados de precipitação 
+
+
+var createYearly = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = chirpsResampled.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .sum() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+
+print('2 - Quantas imagens', createYearly.size())
+  
+  
+print(createYearly)
+
+/// DADOS MODIS PARA A REAMOSTRAGEM
+
+var modis = ee.ImageCollection('MODIS/006/MYD13Q1');
+
+// Filtrar as imagens das coleções para o período desejado
+var modisFiltered = modis.filterDate(startdate, enddate);
+
+// Selecionar a banda de interesse no MODIS NDVI (NDVI)
+var modisNDVI = modisFiltered.select('NDVI');
+
+// Definir a escala de reamostragem (250 metros)
+var scale = 250;
+
+
+/// Função para calcular a LST dia
+
+function fatorLST (img){
+ var LST = img.select("LST_Day_1km").rename('LST')
+  return   img.addBands(LST).multiply(0.02).subtract(273.15)
+                                .clip(roi)
+                              .copyProperties(img, img.propertyNames())
+                             .set({date:img.date().format('yyyy-MM-dd')})
+
+}
+/// Dados LST modis 
+var temperature= ee.ImageCollection("MODIS/061/MOD11A2").select("LST_Day_1km")
+                                      .filterDate(startdate,enddate)
+                                      .filterBounds(roi)
+                                    //  .filter(ee.Filter.calendarRange(10,12,'month'))
+                                      .map(fatorLST)
+
+var LST = temperature.select("LST")
+
+
+// Função para reamostrar MODIS 1km para a escala do MODIS NDVI (250m)
+var resampleImage = function(img) {
+  // Reamostrar a imagem CHIRPS para a escala do MODIS NDVI
+  var resampled = img.resample('bicubic').reproject({
+    crs: modisNDVI.first().projection(),
+    scale: scale
+  });
+  // Retornar a imagem reamostrada
+  return resampled;
+};
+
+// Mapear a função de reamostragem para a coleção MODIS LST
+var LSTResampled = LST .map(resampleImage);
+
+print(LSTResampled)
+
+
+var temperature = LSTResampled.select('LST')
+
+/// Dados anuais de LST
+var createYearly_temp = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = temperature.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .sum() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+print('3 - Quantas imagens', createYearly_temp .size())
+  
+  
+print(createYearly_temp)
+
+// print('Quantas imagens temperatura', createYearly_temp.size())
+  
+
+////Dados NDVI
+  
+function fator (img){
+  return img.multiply(0.0001).copyProperties(img, img.propertyNames())
+}
+
+var IV = ee.ImageCollection("MODIS/061/MYD13Q1") 
+              .select(["NDVI", "EVI"])
+              .filterDate(startdate,enddate)
+              .filterBounds(roi)
+              .map(fator)
+              
+var IV_mensal_media = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = IV.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .sum() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+print('4 - Quantas imagens',  IV_mensal_media.size())  
+              
+              
+// print('Quantas imagens NDVI', ndvi_mensal_media .size())
+
+
+// ##Realizando o join
+
+// ##Precisamos definir propriedades similares
+// ## Neste caso, vamos focar nas datas que se sobrepõem
+
+var innerJoin = ee.Join.inner();
+
+// #Dicionário de filtros que serão utilizados
+var filterTimeEq = ee.Filter.equals({
+  'leftField': "system:time_start",
+  'rightField': "system:time_start"
+})
+
+var innerJoinedclima = innerJoin.apply(IV_mensal_media,
+                                  createYearly, filterTimeEq);
+
+var joined_collections= innerJoinedclima.map(function(feature) { 
+  return ee.Image.cat(feature.get('primary'), feature.get('secondary'))})
+
+// print(joined_collections)
+
+
+
+// ##Junção das coleções
+var innerJoinedclima_temp = innerJoin.apply(joined_collections,
+                                        createYearly_temp, filterTimeEq);
+
+var joined_collections_temp= innerJoinedclima_temp.map(function(feature) { 
+  return ee.Image.cat(feature.get('primary'), feature.get('secondary'))})
+  
+/// transformar a coleção em bandas   
+var colletion = ee.ImageCollection(joined_collections_temp);
+
+print('3 - Juntando todas as coleções', colletion)
+
+// print(joined_collections_temp.size())
+// print(joined_collections_temp)
+
+/// linearFit NDVU e precipitação 
+var linearFit = colletion.select(['precipitation', 'NDVI'])
+  .reduce(ee.Reducer.linearFit());
+
+print(linearFit)
+
+Map.addLayer(linearFit,
+         {min: 0, max: [0.18, 20, -0.18], bands: ['scale', 'offset', 'scale']},
+         'stable lights trend');
+
+// // Inspect the results. PRECISO ENTENDER ISSO PARA FAZER A CORRELAÇÃO TEMPORAL 
+// print('OLS estimates:', linearFit);
+// print('y-intercept:', linearFit.get('offset'));
+// print('Slope:', linearFit.get('scale'));
+
+/// CORRELAÇÃO DO NDVI e precipitação 
+var linear_corel =  colletion.select(['precipitation', 'NDVI'])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+
+print(linear_corel,'peason')
+
+Map.addLayer(linear_corel.select('correlation'),
+        {min: -0.6, max: 0.9, palette: ['blue', 'white', 'green']}, 'correl PREC_NDVI');
+
+/// Exportar a correlação P e NDVI
+  Export.image.toDrive({
+  image: linear_corel.select('correlation'),
+  folder: 'PD_correl_ok',
+  description: 'Correl_P_NDVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  })       
+  
+/// Exportar o p-valor P e NDVI
+  Export.image.toDrive({
+  image: linear_corel.select('p-value'),
+  folder: 'PD_correl_ok',
+  description: 'Pvalue_P_NDVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  })       
+  
+
+ // CORRELAÇÃO DO NDVI e Ts 
+var linear_correlTNDVI =  colletion.select(['NDVI', 'LST'])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+
+print(linear_correlTNDVI,'peason Tmean_NDVI')
+
+// // Inspect the results.
+// print('OLS:', linear_corel );
+// print('p-valor:', linear_corel.get('p-value'));
+// print('correlação:', linear_corel.get('correlation'));
+
+Map.addLayer(linear_correlTNDVI.select('correlation'),
+        {min: -0.4, max: 0.9, palette: ['blue', 'white', 'green']}, 'correl Tmean_NDVI');
+
+
+/// Exportar a correlação Ts e NDVI
+Export.image.toDrive({
+  image: linear_correlTNDVI.select('correlation'),
+  folder: 'PD_correl_ok',
+  description: 'Correl_LST_NDVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  }) 
+
+/// Exportar o p-valor Ts e NDVI
+Export.image.toDrive({
+  image: linear_correlTNDVI.select('p-value'),
+  folder: 'PD_correl_ok',
+  description: 'Pvalue_LST_NDVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  }) 
+  
+
+/// CORRELAÇÃO DO EVI e precipitação 
+var linear_corelevi =  colletion.select(['precipitation', 'EVI'])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+
+/// Exportar a correl P e EVI 
+ Export.image.toDrive({
+  image: linear_corelevi.select('correlation'),
+  folder: 'PD_correl_ok',
+  description: 'Correl_P_EVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  })  
+ 
+ /// Exportar o p-valor P e EVI
+ Export.image.toDrive({
+  image: linear_corelevi.select('p-value'),
+  folder: 'PD_correl_ok',
+  description: 'Pvalue_P_EVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  })  
+  
+// CORRELAÇÃO DO EVI e Ts 
+var linear_correlTEVI =  colletion.select(['EVI', 'LST'])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+ 
+ 
+ /// Exportar o correlação  EVI  e Ts
+ Export.image.toDrive({
+  image: linear_correlTEVI.select('correlation'),
+  folder: 'PD_correl_ok',
+  description: 'Correl_LST_EVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  })       
+  
+/// Exportar o p-valor  EVI  e Ts
+ Export.image.toDrive({
+  image: linear_correlTEVI.select('p-value'),
+  folder: 'PD_correl_ok',
+  description: 'Pvalue_LST_EVI2004-2022_anual',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+  })       
+    
