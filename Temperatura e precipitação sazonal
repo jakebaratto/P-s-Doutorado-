@@ -1,0 +1,182 @@
+
+
+
+var startdate = ee.Date.fromYMD(2003,1,1);
+var enddate = ee.Date.fromYMD(2023,12,31);
+
+/// Área de estudo 
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso')
+Map.centerObject(roi,8)
+
+
+/// Dados de precipitação utilizados 
+var chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+                  .filter(ee.Filter.date(startdate, enddate))
+
+print('1 - Numero de imagens',chirps.size().getInfo())
+
+
+// ##Converter o dado para mensal
+
+var months = ee.List.sequence(7, 9)/// selecionar os meses dos períodos sazonais
+var years = ee.List.sequence(2004, 2022)
+
+// ##Função para agregar dados de precipitação 
+
+var createYearly =  ee.ImageCollection.fromImages(
+    
+    years.map(function (y) { //função ano
+    return months.map(function(m) {//função mês aninhada em ano
+    //Defina a variável precipitação 
+      var createMonthlyImage = chirps.filter(ee.Filter.calendarRange(y, y, 'year'))//Filtro de ano
+                    .filter(ee.Filter.calendarRange(m,m, 'month'))//Filtro de mês
+                    .sum() //acumulando os dados
+                    .clip(roi);//Recortando pela área de estudo
+                    
+      return createMonthlyImage.set('year', y)//Encerrando a função mês
+              .set('month', m) //inserir Mês
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1));//Definindo Data Ano.Mês e Dia
+    });
+  }).flatten() //empilha a coleção ano a ano, mês a mês
+              //Nivela coleções de coleções.
+);
+
+
+/// aplicar cada período sazonal ao ano
+var createYearly = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = createYearly.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .sum() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+
+print('2 - Quantas imagens', createYearly.size())
+
+/// esse gráfico refere-se a precipitação pluvial acumulada no período sazonal idenficiado 
+// anteriormente
+var chart = ui.Chart.image.seriesByRegion({
+    imageCollection: createYearly,
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'precipitation', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'Nome'})
+    .setOptions({
+      title: 'Precipitação sazonal ',
+      hAxis: {title: 'Intervalo de tempo'},
+      vAxis: {title: 'mm'},
+      lineWidth: 1,
+      pointSize: 5,
+      pointShape: 'square',
+      series: {
+          0:  {pointShape: 'circle',color: 'blue'},
+          1: { pointShape: 'triangle', rotation: 180, color: 'DeepSkyBlue'},
+          2: {pointShape: 'square' , color: 'SteelBlue'},
+           3: {pointShape: 'square' , color: 'Green'}
+          }}
+      )
+    .setChartType('ScatterChart');  
+
+print(chart)
+
+/// Função para calcular a LST dia
+
+function fatorTs (img){
+ var mean = img.expression('(Td+Tn)/2',{
+    'Td': img.select('LST_Day_1km'),
+    'Tn': img.select('LST_Night_1km')}).rename('Ts')
+    
+  return   img.addBands(mean).multiply(0.02).subtract(273.15)
+                                .clip(roi)
+                              .copyProperties(img, img.propertyNames())
+                             .set({date:img.date().format('yyyy-MM-dd')})
+
+}
+/// Dados LST modis 
+var temperature= ee.ImageCollection("MODIS/061/MOD11A2")
+                                      .select(['LST_Night_1km',"LST_Day_1km"])
+                                      .filterDate(startdate,enddate)
+                                      .filterBounds(roi)
+                                    //  .filter(ee.Filter.calendarRange(10,12,'month'))
+                                      .map(fatorTs)
+
+var temperature = temperature.select("Ts")
+
+
+/// Dados anuais de Ts
+
+var createYearly_Ts =  ee.ImageCollection.fromImages(
+    
+    years.map(function (y) { //função ano
+    return months.map(function(m) {//função mês aninhada em ano
+    //Defina a variável precipitação 
+      var createMonthlyImage_temp =  temperature.filter(ee.Filter.calendarRange(y, y, 'year'))//Filtro de ano
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))//Filtro de mês
+                    .mean()//acumulando os dados
+                    .clip(roi);//Recortando pela área de estudo
+                    
+      return createMonthlyImage_temp.set('year', y)//Encerrando a função mês
+              .set('month', m) //inserir Mês
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1));//Definindo Data Ano.Mês e Dia
+                        
+    });
+  }).flatten() //empilha a coleção ano a ano, mês a mês
+              //Nivela coleções de coleções.
+);
+
+
+//// aplicar cada período sazonal ao ano
+var createYearly_temp = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = createYearly_Ts.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .mean() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+print('3 - Quantas imagens', createYearly_temp .size())
+  
+  
+print(createYearly_temp)
+
+/// esse gráfico refere-se a temperatura de superfície média no período sazonal idenficiado 
+// anteriormente
+
+
+//Gráfico Temperatura mensal 
+
+var chart = ui.Chart.image.seriesByRegion({
+    imageCollection: createYearly_temp,
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'Ts', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'Nome'})
+    .setOptions({
+      title: 'Temperatura sazonal ',
+      hAxis: {title: 'Intervalo de tempo'},
+      vAxis: {title: '°C'},
+      lineWidth: 1,
+      pointSize: 5,
+      pointShape: 'square',
+      series: {
+          0:  {pointShape: 'circle',color: 'Red'},
+          1: { pointShape: 'triangle', rotation: 180, color: 'DeepSkyRed'},
+          2: {pointShape: 'square' , color: 'SteelRed'}
+          }}
+      )
+    .setChartType('ScatterChart');  
+
+print(chart)
