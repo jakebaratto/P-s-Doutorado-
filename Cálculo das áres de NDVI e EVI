@@ -1,0 +1,182 @@
+//// Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+/// Este script foi desenvolvido para calcular áreas dados de NDVI e LAI do Sensor MODIS (MODIS/061/MYD13Q1)
+/*************************************************************************/
+
+/*******************************Definindo a área de estudo***************************/
+/////Importar shape do limite do manguezal para definir a ROI
+var area_estudo = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso')
+      
+                                      
+Map.centerObject(area_estudo,10)
+
+/***************Aplicando escala para o sensor MODIS**********************/
+
+// fator de escala 
+
+var fator = 0.0001
+
+function aplicarFator (imagem) {
+  return imagem.multiply(fator)
+  .copyProperties(imagem, imagem.propertyNames())
+}
+
+
+/******************Criando Função para classificação ano a ano***********************/
+//datas
+var inicio = 2003
+var final = 2022
+
+var data_inicial = ee.Date.fromYMD(inicio, 1, 1)
+var data_final = ee.Date.fromYMD(final, 12, 31)
+
+var years = ee.List.sequence(inicio, final);
+var months = ee.List.sequence(1,12); 
+
+
+/*************************************Gráfico série temporal*************************/
+var totalAreas=ee.List([]);
+var Names = ee.List(['c1','c2','c3','c4','c5','c6']);
+var years=ee.List.sequence(inicio,final).getInfo();
+var month = ee.List.sequence(1,12).getInfo();
+print (years);
+
+var serie_temporal=years.map(areaCalc);
+function areaCalc(year){
+
+//Intervalo de tempo do LOOP
+var data_inicial = ee.Date.fromYMD(year, 1, 1)
+var data_final = ee.Date.fromYMD(year, 12, 31)
+
+/***************************Importando coleção *****************************/
+
+     
+var ndvi = ee.ImageCollection("MODIS/061/MYD13Q1") 
+              .select("NDVI")
+              .filterDate(data_inicial, data_final)
+              .filter(ee.Filter.calendarRange(4,6,'month')) ////para separar os período em meses. 
+              /////No caso, meses secos (junho a agosto) e chuvosos (setembro a maio)
+              .filterBounds(area_estudo)
+              .map(aplicarFator)
+ 
+print(ndvi)   
+
+
+
+
+//Adicionando Layers
+//Map.addLayer(ndvi.median().clip(area_estudo),{bands: ['NDVI'], min: -1, max: 1},'L8 '+year,0)
+
+
+///// PRECISO REDUZIR TODOS OS ANOS EM UMA IMAGEM SÓ
+
+
+var ndvi_ano = ndvi.reduce(ee.Reducer.mean())
+                    .clip(area_estudo)
+                    .rename('NDVI')
+ print(ndvi_ano)
+
+ var VisAnual2 = {
+            min:-1,
+            max:1,
+           palette: ['#ff0000','#ffff00','#008000']};
+            
+/**************************Adicionado Mapa de Precipitação por ano***********/
+Map.addLayer(ndvi_ano, VisAnual2, 'IV_sazonal/ano')
+
+Export.image.toDrive({
+  image: ndvi_ano,
+  folder: 'PDJ-NDVI_250M',
+  description: 'NDVI_4-6_'.concat(year),
+  region: area_estudo,
+  scale: 250,
+  maxPixels: 1e13
+  }) 
+
+
+
+///// CRIANDO O LIMEAR 
+
+/////Identificando as classes de NDVI/EVI a serem calculadas
+
+var nd = ndvi_ano.select("NDVI")
+var c1 = nd.gt(-1).and(nd.lte(0)).multiply(0)
+var c2 = nd.gt(0).and(nd.lte(0.2)).multiply(1)
+var c3 = nd.gt(0.2).and(nd.lte(0.4)).multiply(2)
+var c4 = nd.gt(0.4).and(nd.lte(0.6)).multiply(3)
+var c5 = nd.gt(0.6).and(nd.lte(0.8)).multiply(4)
+var c6 = nd.gt(0.8).and(nd.lte(1)).multiply(5)
+
+print(nd)
+
+
+var reclass= c1.add(c2).add(c3).add(c4).add(c5).add(c6)
+
+print(reclass)
+
+
+
+/********************************************Gráfico de áreas**************************************************/
+//Gráfico de área
+/********************************************Gráfico de áreas**************************************************/
+var nomes = ['c1','c2','c3','c4','c5', 'c6'];
+var renomeado = reclass.eq([0,1,2,3,4,5]).rename(nomes);
+
+var area = renomeado.multiply(ee.Image.pixelArea()).divide(1000000); //para converter para km2;
+var area_por_classe = area.reduceRegion({
+  reducer: ee.Reducer.sum(), //quero somar a área total
+  geometry: area_estudo,
+  scale:250, 
+ // crs:'EPSG: 4326', 
+  bestEffort: true, 
+  maxPixels:1e13});
+
+var area_total = ee.Number(area_por_classe);
+print('area total por classe: '+year,area_total);
+
+/*Criando listas array*/
+var a = ee.Array(area_por_classe.get('c1'));
+var b = ee.Array(area_por_classe.get('c2'));
+var c = ee.Array(area_por_classe.get('c3'));
+var d = ee.Array(area_por_classe.get('c4'));
+var e = ee.Array(area_por_classe.get('c5'));
+var f = ee.Array(area_por_classe.get('c6'));
+var Areas = ee.Array.cat([a, b, c, d,e,f], 0);
+
+var lista = ee.List([a,b,c,d,e,f]);
+var Nomes = ee.List(nomes);
+
+totalAreas=totalAreas.add(Areas)
+
+}
+
+var chart = ui.Chart.array.values({
+    array: totalAreas,
+    axis: 0,
+    xLabels: years,
+    })
+    .setSeriesNames(Names)
+    .setOptions({
+      title: 'Área em km²',
+      hAxis: {title: 'Classes de NDVI/EVI por Ano', format: '####'},
+      vAxis: {title: 'Area (km²)', format: 'decimal'},
+      legend:  Names,
+      interpolateNulls: true,
+      lineWidth: 1,
+      pointSize: 3,
+      series: {
+      0: {color: 'red'},
+    1: {color: 'yellow'},
+    2: {color: 'orange'},
+    3: {color: 'lightgreen'},
+    4: {color: 'green'},
+    5: {color: 'darkgreen'}
+  }
+  })
+      .setChartType('ColumnChart');
+
+print(chart);
+
+
+
+
