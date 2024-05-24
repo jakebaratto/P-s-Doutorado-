@@ -1,6 +1,6 @@
-
-//**  Correlação linear de pearson deu certo - porém dados separados em dois períodos**//
-/// Um período só juntando todos os dados mensais (2004-2022)
+// Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+/// Script desenvolvido com base no curso da AmbGEO Python Para Análises Geoespaciais
 
 
 // SCCI
