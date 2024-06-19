@@ -1,0 +1,1436 @@
+###Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP. 
+###Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3).
+### Script aplicado para a validação dos dados de produtos orbitais com os dados em superfíci na escala mensal. 
+
+### Pacotes utilizados 
+
+library(terra)
+library(hydroGOF)
+
+### Carregar dados ID1
+
+dados = read.csv2(file.choose())
+dados
+
+
+################################################## ID1 ############################
+
+X1 <- dados$O1
+Yc1 <- dados$CH1
+
+### Metricas estatísticas 
+
+cor1 <- cor(X1, Yc1)
+
+rc1 <- (cor(Yc1, X1, method="pearson"))^2 
+rc1
+
+## Formúla de regressão 
+regch1 <- lm(Yc1 ~ X1)
+
+summary(regch1)
+
+R=c(summary(regch1))
+R
+
+R2c1 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEch1 <- mae(Yc1, X1)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEch1 <- rmse(Yc1,X1)
+
+# índice de concordância
+dch1 <- d(Yc1, X1)
+
+# PBIAS
+
+pbiasch1 <- pbias(Yc1, X1)
+
+
+### Criando tabela
+resultados_C1 <- data.frame(
+  Correlacao = cor1,
+  Coeficiente_Ajuste = R2c1,
+  MAE = MAEch1,
+  RMSE = RMSEch1,
+  Concordancia = dch1,
+  PBIAS = pbiasch1
+)
+resultados_C1
+
+########################### O e TRMM #####################################33
+
+
+X1 <- dados$O1
+Yt1 <- dados$TRMM1
+
+### Metricas estatísticas 
+
+corT1 <- cor(X1, Yt1)
+
+rT1 <- (cor(Yt1, X1, method="pearson"))^2 
+rT1
+
+## Formúla de regressão 
+regT1 <- lm(Yt1 ~ X1)
+
+summary(regT1)
+
+R=c(summary(regT1))
+R
+
+R2T1 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAET1 <- mae(Yt1, X1)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSET1 <- rmse(Yt1,X1)
+
+# índice de concordância
+dT1 <- d(Yt1, X1)
+
+# PBIAS
+
+pbiasT1 <- pbias(Yt1, X1)
+
+
+### Criando tabela
+resultados_T1 <- data.frame(
+  Correlacao = corT1,
+  Coeficiente_Ajuste = R2T1,
+  MAE = MAET1,
+  RMSE = RMSET1,
+  Concordancia = dT1,
+  PBIAS = pbiasT1
+)
+resultados_T1
+
+########################### O e P #####################################33
+
+### Carregar dados 
+
+X1 <- dados$O1
+Yp1 <- dados$P1
+
+### Metricas estatísticas 
+
+corP1<- cor(X1, Yp1)
+
+rP1 <- (cor(Yp1, X1, method="pearson"))^2 
+rP1
+
+## Formúla de regressão 
+regP1 <- lm(Yp1 ~ X1)
+
+summary(regP1)
+
+R=c(summary(regP1))
+R
+
+R2P1 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEP1 <- mae(Yp1, X1)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEP1 <- rmse(Yp1,X1)
+
+# índice de concordância
+dP1 <- d(Yp1, X1)
+
+# PBIAS
+
+pbiasP1 <- pbias(Yp1, X1)
+
+
+### Criando tabela
+resultados_P1 <- data.frame(
+  Correlacao = corP1,
+  Coeficiente_Ajuste = R2P1,
+  MAE = MAEP1,
+  RMSE = RMSEP1,
+  Concordancia = dP1,
+  PBIAS = pbiasP1
+)
+resultados_P1
+
+########################### O e M ####################################
+
+X1 <- dados$O1
+Ym1 <- dados$M1
+
+
+corM1 <- cor(X1, Ym1)
+
+rM1 <- (cor(Ym1, X1, method="pearson"))^2 
+rM1
+
+## Formúla de regressão 
+regM1 <- lm(Ym1 ~ X1)
+
+summary(regP1)
+
+R=c(summary(regP1))
+R
+
+R2M1 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEM1 <- mae(Ym1, X1)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEM1 <- rmse(Ym1,X1)
+
+# índice de concordância
+dM1 <- d(Ym1, X1)
+
+# PBIAS
+
+pbiasM1 <- pbias(Ym1, X1)
+
+
+### Criando tabela
+resultados_M1 <- data.frame(
+  Correlacao = corM1,
+  Coeficiente_Ajuste = R2M1,
+  MAE = MAEM1,
+  RMSE = RMSEM1,
+  Concordancia = dM1,
+  PBIAS = pbiasM1
+)
+resultados_M1
+
+###### mostrando resultados ID 1
+
+resultados_C1
+resultados_T1
+resultados_P1
+resultados_M1
+
+TABELA_1=matrix(c(resultados_C1,resultados_T1,resultados_P1,resultados_M1),ncol=6,byrow=TRUE)
+
+TABELA_1
+
+
+################################################## ID4 ############################
+
+X4 <- dados$O4
+Yc4 <- dados$CH4
+
+### Metricas estatísticas 
+
+cor4 <- cor(X4, Yc4)
+
+rc4 <- (cor(Yc4, X4, method="pearson"))^2 
+rc4
+
+## Formúla de regressão 
+regch4 <- lm(Yc4 ~ X4)
+
+summary(regch4)
+
+R=c(summary(regch4))
+R
+
+R2c4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEch4 <- mae(Yc4, X4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEch4 <- rmse(Yc4,X4)
+
+# índice de concordância
+dch4 <- d(Yc4, X4)
+
+# PBIAS
+
+pbiasch4 <- pbias(Yc4, X4)
+
+
+### Criando tabela
+resultados_C4 <- data.frame(
+  Correlacao = cor4,
+  Coeficiente_Ajuste = R2c4,
+  MAE = MAEch4,
+  RMSE = RMSEch4,
+  Concordancia = dch4,
+  PBIAS = pbiasch4
+)
+resultados_C4
+
+########################### O e TRMM ###################################
+
+
+X4 <- dados$O4
+Yt4 <- dados$TRMM4
+
+### Metricas estatísticas 
+
+corT4 <- cor(X4, Yt4)
+
+rT4 <- (cor(Yt4, X4, method="pearson"))^2 
+rT4
+
+## Formúla de regressão 
+regT4 <- lm(Yt4 ~ X4)
+
+summary(regT4)
+
+R=c(summary(regT4))
+R
+
+R2T4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAET4 <- mae(Yt4, X4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSET4 <- rmse(Yt4,X4)
+
+# índice de concordância
+dT4 <- d(Yt4, X4)
+
+# PBIAS
+
+pbiasT4 <- pbias(Yt4, X4)
+
+
+### Criando tabela
+resultados_T4 <- data.frame(
+  Correlacao = corT4,
+  Coeficiente_Ajuste = R2T4,
+  MAE = MAET4,
+  RMSE = RMSET4,
+  Concordancia = dT4,
+  PBIAS = pbiasT4
+)
+resultados_T4
+
+########################### O e P #####################################
+
+### Carregar dados 
+
+X4 <- dados$O4
+Yp4 <- dados$P4
+
+### Metricas estatísticas 
+
+corP4 <- cor(X4, Yp4)
+
+rP4 <- (cor(Yp4, X4, method="pearson"))^2 
+rP4
+
+## Formúla de regressão 
+regP4 <- lm(Yp4 ~ X4)
+
+summary(regP4)
+
+R=c(summary(regP4))
+R
+
+R2P4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEP4 <- mae(Yp4, X4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEP4 <- rmse(Yp4,X4)
+
+# índice de concordância
+dP4 <- d(Yp4, X4)
+
+# PBIAS
+
+pbiasP4 <- pbias(Yp4, X4)
+
+
+### Criando tabela
+resultados_P4 <- data.frame(
+  Correlacao = corP4,
+  Coeficiente_Ajuste = R2P4,
+  MAE = MAEP4,
+  RMSE = RMSEP4,
+  Concordancia = dP4,
+  PBIAS = pbiasP4
+)
+resultados_P4
+
+########################### O e M ####################################
+
+X4 <- dados$O4
+Ym4 <- dados$M4
+
+
+corM4 <- cor(X4, Ym4)
+
+rM4 <- (cor(Ym4, X4, method="pearson"))^2 
+rM4
+
+## Formúla de regressão 
+regM4 <- lm(Ym4 ~ X4)
+
+summary(regP4)
+
+R=c(summary(regP4))
+R
+
+R2M4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEM4 <- mae(Ym4, X4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEM4 <- rmse(Ym4,X4)
+
+# índice de concordância
+dM4 <- d(Ym4, X4)
+
+# PBIAS
+
+pbiasM4 <- pbias(Ym4, X4)
+
+
+### Criando tabela
+resultados_M4 <- data.frame(
+  Correlacao = corM4,
+  Coeficiente_Ajuste = R2M4,
+  MAE = MAEM4,
+  RMSE = RMSEM4,
+  Concordancia = dM4,
+  PBIAS = pbiasM4
+)
+resultados_M4
+
+###### mostrando resultados ID 2
+
+resultados_C4
+resultados_T4
+resultados_P4
+resultados_M4
+
+TABELA_4=matrix(c(resultados_C4,resultados_T4,resultados_P4,resultados_M4),ncol=6,byrow=TRUE)
+
+TABELA_4
+
+
+################################################## ID5 ############################
+
+X5 <- dados$O5
+Yc5 <- dados$CH5
+
+### Metricas estatísticas 
+
+cor5 <- cor(X5, Yc5)
+
+rc5 <- (cor(Yc5, X5, method="pearson"))^2 
+rc5
+
+## Formúla de regressão 
+regch5 <- lm(Yc5 ~ X5)
+
+summary(regch5)
+
+R=c(summary(regch5))
+R
+
+R2c5 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEch5 <- mae(Yc5, X5)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEch5 <- rmse(Yc5,X5)
+
+# índice de concordância
+dch5 <- d(Yc5, X5)
+
+# PBIAS
+
+pbiasch5 <- pbias(Yc5, X5)
+
+
+### Criando tabela
+resultados_C5 <- data.frame(
+  Correlacao = cor5,
+  Coeficiente_Ajuste = R2c5,
+  MAE = MAEch5,
+  RMSE = RMSEch5,
+  Concordancia = dch5,
+  PBIAS = pbiasch5
+)
+resultados_C5
+
+########################### O e TRMM ###################################
+
+
+X5 <- dados$O5
+Yt5 <- dados$TRMM5
+
+### Metricas estatísticas 
+
+corT5 <- cor(X5, Yt5)
+
+rT5 <- (cor(Yt5, X5, method="pearson"))^2 
+rT5
+
+## Formúla de regressão 
+regT5 <- lm(Yt5 ~ X5)
+
+summary(regT5)
+
+R=c(summary(regT5))
+R
+
+R2T5 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAET5 <- mae(Yt5, X5)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSET5 <- rmse(Yt5,X5)
+
+# índice de concordância
+dT5 <- d(Yt5, X5)
+
+# PBIAS
+
+pbiasT5 <- pbias(Yt5, X5)
+
+
+### Criando tabela
+resultados_T5 <- data.frame(
+  Correlacao = corT5,
+  Coeficiente_Ajuste = R2T5,
+  MAE = MAET5,
+  RMSE = RMSET5,
+  Concordancia = dT5,
+  PBIAS = pbiasT5
+)
+resultados_T5
+
+########################### O e P #####################################
+
+### Carregar dados 
+
+X5 <- dados$O5
+Yp5 <- dados$P5
+
+### Metricas estatísticas 
+
+corP5 <- cor(X5, Yp5)
+
+rP5 <- (cor(Yp5, X5, method="pearson"))^2 
+rP5
+
+## Formúla de regressão 
+regP5 <- lm(Yp5 ~ X5)
+
+summary(regP5)
+
+R=c(summary(regP5))
+R
+
+R2P5 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEP5 <- mae(Yp5, X5)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEP5 <- rmse(Yp5,X5)
+
+# índice de concordância
+dP5 <- d(Yp5, X5)
+
+# PBIAS
+
+pbiasP5 <- pbias(Yp5, X5)
+
+
+### Criando tabela
+resultados_P5 <- data.frame(
+  Correlacao = corP5,
+  Coeficiente_Ajuste = R2P5,
+  MAE = MAEP5,
+  RMSE = RMSEP5,
+  Concordancia = dP5,
+  PBIAS = pbiasP5
+)
+resultados_P5
+
+########################### O e M ####################################
+
+X5 <- dados$O5
+Ym5 <- dados$M5
+
+
+corM5 <- cor(X5, Ym5)
+
+rM5 <- (cor(Ym5, X5, method="pearson"))^2 
+rM5
+
+## Formúla de regressão 
+regM5 <- lm(Ym5 ~ X5)
+
+summary(regP5)
+
+R=c(summary(regP5))
+R
+
+R2M5 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEM5 <- mae(Ym5, X5)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEM5 <- rmse(Ym5,X5)
+
+# índice de concordância
+dM5 <- d(Ym5, X5)
+
+# PBIAS
+
+pbiasM5 <- pbias(Ym5, X5)
+
+
+### Criando tabela
+resultados_M5 <- data.frame(
+  Correlacao = corM5,
+  Coeficiente_Ajuste = R2M5,
+  MAE = MAEM5,
+  RMSE = RMSEM5,
+  Concordancia = dM5,
+  PBIAS = pbiasM5
+)
+resultados_M5
+
+###### mostrando resultados ID 2
+
+resultados_C5
+resultados_T5
+resultados_P5
+resultados_M5
+
+TABELA_5=matrix(c(resultados_C5,resultados_T5,resultados_P5,resultados_M5),ncol=6,byrow=TRUE)
+
+TABELA_5
+
+################################################## ID6 ############################
+
+X6 <- dados$O6
+Yc6 <- dados$CH6
+
+### Metricas estatísticas 
+
+cor6 <- cor(X6, Yc6)
+
+rc6 <- (cor(Yc6, X6, method="pearson"))^2 
+rc6
+
+## Formúla de regressão 
+regch6 <- lm(Yc6 ~ X6)
+
+summary(regch6)
+
+R=c(summary(regch6))
+R
+
+R2c6 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEch6 <- mae(Yc6, X6)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEch6 <- rmse(Yc6,X6)
+
+# índice de concordância
+dch6 <- d(Yc6, X6)
+
+# PBIAS
+
+pbiasch6 <- pbias(Yc6, X6)
+
+
+### Criando tabela
+resultados_C6 <- data.frame(
+  Correlacao = cor6,
+  Coeficiente_Ajuste = R2c6,
+  MAE = MAEch6,
+  RMSE = RMSEch6,
+  Concordancia = dch6,
+  PBIAS = pbiasch6
+)
+resultados_C6
+
+########################### O e TRMM #####################################66
+
+
+X6 <- dados$O6
+Yt6 <- dados$TRMM6
+
+### Metricas estatísticas 
+
+corT6 <- cor(X6, Yt6)
+
+rT6 <- (cor(Yt6, X6, method="pearson"))^2 
+rT6
+
+## Formúla de regressão 
+regT6 <- lm(Yt6 ~ X6)
+
+summary(regT6)
+
+R=c(summary(regT6))
+R
+
+R2T6 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAET6 <- mae(Yt6, X6)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSET6 <- rmse(Yt6,X6)
+
+# índice de concordância
+dT6 <- d(Yt6, X6)
+
+# PBIAS
+
+pbiasT6 <- pbias(Yt6, X6)
+
+
+### Criando tabela
+resultados_T6 <- data.frame(
+  Correlacao = corT6,
+  Coeficiente_Ajuste = R2T6,
+  MAE = MAET6,
+  RMSE = RMSET6,
+  Concordancia = dT6,
+  PBIAS = pbiasT6
+)
+resultados_T6
+
+########################### O e P #####################################66
+
+### Carregar dados 
+
+X6 <- dados$O6
+Yp6 <- dados$P6
+
+### Metricas estatísticas 
+
+corP6 <- cor(X6, Yp6)
+
+rP6 <- (cor(Yp6, X6, method="pearson"))^2 
+rP6
+
+## Formúla de regressão 
+regP6 <- lm(Yp6 ~ X6)
+
+summary(regP6)
+
+R=c(summary(regP6))
+R
+
+R2P6 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEP6 <- mae(Yp6, X6)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEP6 <- rmse(Yp6,X6)
+
+# índice de concordância
+dP6 <- d(Yp6, X6)
+
+# PBIAS
+
+pbiasP6 <- pbias(Yp6, X6)
+
+
+### Criando tabela
+resultados_P6 <- data.frame(
+  Correlacao = corP6,
+  Coeficiente_Ajuste = R2P6,
+  MAE = MAEP6,
+  RMSE = RMSEP6,
+  Concordancia = dP6,
+  PBIAS = pbiasP6
+)
+resultados_P6
+
+########################### O e M ####################################
+
+X6 <- dados$O6
+Ym6 <- dados$M6
+
+
+corM6 <- cor(X6, Ym6)
+
+rM6 <- (cor(Ym6, X6, method="pearson"))^2 
+rM6
+
+## Formúla de regressão 
+regM6 <- lm(Ym6 ~ X6)
+
+summary(regM6)
+
+R=c(summary(regM6))
+R
+
+R2M6 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEM6 <- mae(Ym6, X6)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEM6 <- rmse(Ym6,X6)
+
+# índice de concordância
+dM6 <- d(Ym6, X6)
+
+# PBIAS
+
+pbiasM6 <- pbias(Ym6, X6)
+
+
+### Criando tabela
+resultados_M6 <- data.frame(
+  Correlacao = corM6,
+  Coeficiente_Ajuste = R2M6,
+  MAE = MAEM6,
+  RMSE = RMSEM6,
+  Concordancia = dM6,
+  PBIAS = pbiasM6
+)
+resultados_M6
+
+###### mostrando resultados ID 6
+
+resultados_C6
+resultados_T6
+resultados_P6
+resultados_M6
+
+TABELA_6=matrix(c(resultados_C6,resultados_T6,resultados_P6,resultados_M6),ncol=6,byrow=TRUE)
+
+TABELA_6
+
+################################################## ID7 ############################
+
+X7 <- dados$O7
+Yc7 <- dados$CH7
+
+### Metricas estatísticas 
+
+cor7 <- cor(X7, Yc7)
+
+rc7 <- (cor(Yc7, X7, method="pearson"))^2 
+rc7
+
+## Formúla de regressão 
+regch7 <- lm(Yc7 ~ X7)
+
+summary(regch7)
+
+R=c(summary(regch7))
+R
+
+R2c7 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEch7 <- mae(Yc7, X7)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEch7 <- rmse(Yc7,X7)
+
+# índice de concordância
+dch7 <- d(Yc7, X7)
+
+# PBIAS
+
+pbiasch7 <- pbias(Yc7, X7)
+
+
+### Criando tabela
+resultados_C7 <- data.frame(
+  Correlacao = cor7,
+  Coeficiente_Ajuste = R2c7,
+  MAE = MAEch7,
+  RMSE = RMSEch7,
+  Concordancia = dch7,
+  PBIAS = pbiasch7
+)
+resultados_C7
+
+########################### O e TRMM #####################################77
+
+
+X7 <- dados$O7
+Yt7 <- dados$TRMM7
+
+### Metricas estatísticas 
+
+corT7 <- cor(X7, Yt7)
+
+rT7 <- (cor(Yt7, X7, method="pearson"))^2 
+rT7
+
+## Formúla de regressão 
+regT7 <- lm(Yt7 ~ X7)
+
+summary(regT7)
+
+R=c(summary(regT7))
+R
+
+R2T7 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAET7 <- mae(Yt7, X7)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSET7 <- rmse(Yt7,X7)
+
+# índice de concordância
+dT7 <- d(Yt7, X7)
+
+# PBIAS
+
+pbiasT7 <- pbias(Yt7, X7)
+
+
+### Criando tabela
+resultados_T7 <- data.frame(
+  Correlacao = corT7,
+  Coeficiente_Ajuste = R2T7,
+  MAE = MAET7,
+  RMSE = RMSET7,
+  Concordancia = dT7,
+  PBIAS = pbiasT7
+)
+resultados_T7
+
+########################### O e P #####################################77
+
+### Carregar dados 
+
+X7 <- dados$O7
+Yp7 <- dados$P7
+
+### Metricas estatísticas 
+
+corP7 <- cor(X7, Yp7)
+
+rP7 <- (cor(Yp7, X7, method="pearson"))^2 
+rP7
+
+## Formúla de regressão 
+regP7 <- lm(Yp7 ~ X7)
+
+summary(regP7)
+
+R=c(summary(regP7))
+R
+
+R2P7 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEP7 <- mae(Yp7, X7)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEP7 <- rmse(Yp7,X7)
+
+# índice de concordância
+dP7 <- d(Yp7, X7)
+
+# PBIAS
+
+pbiasP7 <- pbias(Yp7, X7)
+
+
+### Criando tabela
+resultados_P7 <- data.frame(
+  Correlacao = corP7,
+  Coeficiente_Ajuste = R2P7,
+  MAE = MAEP7,
+  RMSE = RMSEP7,
+  Concordancia = dP7,
+  PBIAS = pbiasP7
+)
+resultados_P7
+
+########################### O e M ####################################
+
+X7 <- dados$O7
+Ym7 <- dados$M7
+
+
+corM7 <- cor(X7, Ym7)
+
+rM7 <- (cor(Ym7, X7, method="pearson"))^2 
+rM7
+
+## Formúla de regressão 
+regM7 <- lm(Ym7 ~ X7)
+
+summary(regM7)
+
+R=c(summary(regM7))
+R
+
+R2M7 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEM7 <- mae(Ym7, X7)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEM7 <- rmse(Ym7,X7)
+
+# índice de concordância
+dM7 <- d(Ym7, X7)
+
+# PBIAS
+
+pbiasM7 <- pbias(Ym7, X7)
+
+
+### Criando tabela
+resultados_M7 <- data.frame(
+  Correlacao = corM7,
+  Coeficiente_Ajuste = R2M7,
+  MAE = MAEM7,
+  RMSE = RMSEM7,
+  Concordancia = dM7,
+  PBIAS = pbiasM7
+)
+resultados_M7
+
+###### mostrando resultados ID 2
+
+resultados_C7
+resultados_T7
+resultados_P7
+resultados_M7
+
+TABELA_7=matrix(c(resultados_C7,resultados_T7,resultados_P7,resultados_M7),ncol=6,byrow=TRUE)
+
+TABELA_7
+
+X2 <- dados$O2
+Yc2 <- dados$CH2
+
+### Metricas estatísticas 
+
+cor2 <- cor(X2, Yc2)
+
+rc2 <- (cor(Yc2, X2, method="pearson"))^2 
+rc2
+
+## Formúla de regressão 
+regch2 <- lm(Yc2 ~ X2)
+
+summary(regch2)
+
+R=c(summary(regch2))
+R
+
+R2c2 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEch2 <- mae(Yc2, X2)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEch2 <- rmse(Yc2,X2)
+
+# índice de concordância
+dch2 <- d(Yc2, X2)
+
+# PBIAS
+
+pbiasch2 <- pbias(Yc2, X2)
+
+
+### Criando tabela
+resultados_C2 <- data.frame(
+  Correlacao = cor2,
+  Coeficiente_Ajuste = R2c2,
+  MAE = MAEch2,
+  RMSE = RMSEch2,
+  Concordancia = dch2,
+  PBIAS = pbiasch2
+)
+resultados_C2
+
+########################### O e TRMM #####################################33
+
+
+X2 <- dados$O2
+Yt2 <- dados$TRMM2
+
+### Metricas estatísticas 
+
+corT2 <- cor(X2, Yt2)
+
+rT2 <- (cor(Yt2, X2, method="pearson"))^2 
+rT2
+
+## Formúla de regressão 
+regT2 <- lm(Yt2 ~ X2)
+
+summary(regT2)
+
+R=c(summary(regT2))
+R
+
+R2T2 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAET2 <- mae(Yt2, X2)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSET2 <- rmse(Yt2,X2)
+
+# índice de concordância
+dT2 <- d(Yt2, X2)
+
+# PBIAS
+
+pbiasT2 <- pbias(Yt2, X2)
+
+
+### Criando tabela
+resultados_T2 <- data.frame(
+  Correlacao = corT2,
+  Coeficiente_Ajuste = R2T2,
+  MAE = MAET2,
+  RMSE = RMSET2,
+  Concordancia = dT2,
+  PBIAS = pbiasT2
+)
+resultados_T2
+
+########################### O e P #####################################33
+
+### Carregar dados 
+
+X2 <- dados$O2
+Yp2 <- dados$P2
+
+### Metricas estatísticas 
+
+corP2 <- cor(X2, Yp2)
+
+rP2 <- (cor(Yp2, X2, method="pearson"))^2 
+rP2
+
+## Formúla de regressão 
+regP2 <- lm(Yp2 ~ X2)
+
+summary(regP2)
+
+R=c(summary(regP2))
+R
+
+R2P2 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEP2 <- mae(Yp2, X2)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEP2 <- rmse(Yp2,X2)
+
+# índice de concordância
+dP2 <- d(Yp2, X2)
+
+# PBIAS
+
+pbiasP2 <- pbias(Yp2, X2)
+
+
+### Criando tabela
+resultados_P2 <- data.frame(
+  Correlacao = corP2,
+  Coeficiente_Ajuste = R2P2,
+  MAE = MAEP2,
+  RMSE = RMSEP2,
+  Concordancia = dP2,
+  PBIAS = pbiasP2
+)
+resultados_P2
+
+########################### O e M ####################################
+
+X2 <- dados$O2
+Ym2 <- dados$M2
+
+
+corM2 <- cor(X2, Ym2)
+
+rM2 <- (cor(Ym2, X2, method="pearson"))^2 
+rM2
+
+## Formúla de regressão 
+regM2 <- lm(Ym2 ~ X2)
+
+summary(regP2)
+
+R=c(summary(regP2))
+R
+
+R2M2 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEM2 <- mae(Ym2, X2)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEM2 <- rmse(Ym2,X2)
+
+# índice de concordância
+dM2 <- d(Ym2, X2)
+
+# PBIAS
+
+pbiasM2 <- pbias(Ym2, X2)
+
+
+### Criando tabela
+resultados_M2 <- data.frame(
+  Correlacao = corM2,
+  Coeficiente_Ajuste = R2M2,
+  MAE = MAEM2,
+  RMSE = RMSEM2,
+  Concordancia = dM2,
+  PBIAS = pbiasM2
+)
+resultados_M2
+
+###### mostrando resultados ID 2
+
+resultados_CH2
+resultados_TRMM2
+resultados_P2
+resultados_M2
+
+TABELA_2=matrix(c(resultados_C2,resultados_T2,resultados_P2,resultados_M2),ncol=6,byrow=TRUE)
+
+TABELA_2
+
+
+
+################################################## ID3 ############################
+
+X3 <- dados$O3
+Yc3 <- dados$CH3
+
+### Metricas estatísticas 
+
+cor3 <- cor(X3, Yc3)
+
+rc3 <- (cor(Yc3, X3, method="pearson"))^2 
+rc3
+
+## Formúla de regressão 
+regch3 <- lm(Yc3 ~ X3)
+
+summary(regch3)
+
+R=c(summary(regch3))
+R
+
+R2c3 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEch3 <- mae(Yc3, X3)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEch3 <- rmse(Yc3,X3)
+
+# índice de concordância
+dch3 <- d(Yc3, X3)
+
+# PBIAS
+
+pbiasch3 <- pbias(Yc3, X3)
+
+
+### Criando tabela
+resultados_C3 <- data.frame(
+  Correlacao = cor3,
+  Coeficiente_Ajuste = R2c3,
+  MAE = MAEch3,
+  RMSE = RMSEch3,
+  Concordancia = dch3,
+  PBIAS = pbiasch3
+)
+resultados_C3
+
+########################### O e TRMM #####################################33
+
+
+X3 <- dados$O3
+Yt3 <- dados$TRMM3
+
+### Metricas estatísticas 
+
+corT3 <- cor(X3, Yt3)
+
+rT3 <- (cor(Yt3, X3, method="pearson"))^2 
+rT3
+
+## Formúla de regressão 
+regT3 <- lm(Yt3 ~ X3)
+
+summary(regT3)
+
+R=c(summary(regT3))
+R
+
+R2T3 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAET3 <- mae(Yt3, X3)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSET3 <- rmse(Yt3,X3)
+
+# índice de concordância
+dT3 <- d(Yt3, X3)
+
+# PBIAS
+
+pbiasT3 <- pbias(Yt3, X3)
+
+
+### Criando tabela
+resultados_T3 <- data.frame(
+  Correlacao = corT3,
+  Coeficiente_Ajuste = R2T3,
+  MAE = MAET3,
+  RMSE = RMSET3,
+  Concordancia = dT3,
+  PBIAS = pbiasT3
+)
+resultados_T3
+
+########################### O e P #####################################33
+
+### Carregar dados 
+
+X3 <- dados$O3
+Yp3 <- dados$P3
+
+### Metricas estatísticas 
+
+corP3 <- cor(X3, Yp3)
+
+rP3 <- (cor(Yp3, X3, method="pearson"))^2 
+rP3
+
+## Formúla de regressão 
+regP3 <- lm(Yp3 ~ X3)
+
+summary(regP3)
+
+R=c(summary(regP3))
+R
+
+R2P3 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEP3 <- mae(Yp3, X3)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEP3 <- rmse(Yp3,X3)
+
+# índice de concordância
+dP3 <- d(Yp3, X3)
+
+# PBIAS
+
+pbiasP3 <- pbias(Yp3, X3)
+
+
+### Criando tabela
+resultados_P3 <- data.frame(
+  Correlacao = corP3,
+  Coeficiente_Ajuste = R2P3,
+  MAE = MAEP3,
+  RMSE = RMSEP3,
+  Concordancia = dP3,
+  PBIAS = pbiasP3
+)
+resultados_P3
+
+########################### O e M ####################################
+
+X3 <- dados$O3
+Ym3 <- dados$M3
+
+
+corM3 <- cor(X3, Ym3)
+
+rM3 <- (cor(Ym3, X3, method="pearson"))^2 
+rM3
+
+## Formúla de regressão 
+regM3 <- lm(Ym3 ~ X3)
+
+summary(regP3)
+
+R=c(summary(regP3))
+R
+
+R2M3 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEM3 <- mae(Ym3, X3)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEM3 <- rmse(Ym3,X3)
+
+# índice de concordância
+dM3 <- d(Ym3, X3)
+
+# PBIAS
+
+pbiasM3 <- pbias(Ym3, X3)
+
+
+### Criando tabela
+resultados_M3 <- data.frame(
+  Correlacao = corM3,
+  Coeficiente_Ajuste = R2M3,
+  MAE = MAEM3,
+  RMSE = RMSEM3,
+  Concordancia = dM3,
+  PBIAS = pbiasM3
+)
+resultados_M3
+
+###### mostrando resultados ID 2
+
+resultados_C3
+resultados_TRMM3
+resultados_P3
+resultados_M3
+
+TABELA_3=matrix(c(resultados_C3,resultados_T3,resultados_P3,resultados_M3),ncol=6,byrow=TRUE)
+
+TABELA_3
+
+TABELA_2
+TABELA_3
+
+
+
+TABELA_1
+TABELA_2
+TABELA_3
+TABELA_4
+TABELA_5
+TABELA_6
+TABELA_7
