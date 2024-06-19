@@ -1,0 +1,59 @@
+### Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+### Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+### Este script foi desenvolvido aplicar a correlação cruzada entre os dados de precipitação pluvial oriundos do CHIRPS e dados do NDVI do produtos (MODIS/061/MYD13Q1)
+
+## pacotes 
+if(!require(stplus)) install.packages("stlplus")
+library(stlplus)
+
+#Leitura de dados
+
+data = read.csv2(file.choose())
+View(data)                               
+glimpse(data)
+
+NDVI <- ts(data$NDVI, start=2003, end=2022)
+P <- ts(data$P, start=2003, end=2022)
+
+ #Transformação dos dados em séries temporais e visualização
+P<-ts(data$P)
+NDVI<-ts(data$NDVI)
+
+plot(ts.union(P,NDVI))
+
+#Decomposição das séries temporais
+ stls<-stlplus(P[,1],n.p=12,s.window="periodic")
+ stlr<-stlplus(NDVI[,1],n.p=12,s.window="periodic")
+ plot(stls)
+ plot(stlr)
+#Série temporal dos resíduos (ou "remaider")
+
+ P<-stls$data[,4]
+ NDVI<-stlr$data[,4]
+ par(mfrow=c(2,2))
+ plot(P)
+ qqnorm(P)
+ qqline(P)
+ acf(P)
+ pacf(P)
+ plot(NDVI)
+ qqnorm(NDVI)
+ qqline(NDVI)
+ acf(NDVI)
+ pacf(NDVI)
+ 
+#Ajuste de modelo ARMA e Prewhitening
+ resid_P<-resid(arima(P,order=c(1,0,2)))
+ resid_NDVI<-resid(arima(NDVI,order=c(3,0,1)))
+ acf(resid_P)
+ pacf(resid_P)
+ acf(resid_NDVI)
+ pacf(resid_NDVI)
+#Correlação Cruzada
+ sr<-ts.union(resid_P,resid_NDVI)
+ acf(sr,ylim=c(-1,1))
+ ccf(P, NDVI)
+ ccf(resid_P,resid_NDVI, plot=F)
+ 
+ # Correlação Linear de Pearson (coeficiente = r):
+ cor.test(series$NDVI, series$P_lag, method = "pearson")
