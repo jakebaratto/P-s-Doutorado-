@@ -1,0 +1,209 @@
+//// Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+/// Script faz referência ao calculo do SPI para o SPI1, SPI3 e SPI12. 
+
+// Pacotes utilizados 
+library("SPEI")
+library("lmomco")
+library("ggplot2")
+
+if(!require(pacman)) install.packages("pacman")
+pacman::p_load(dplyr,ggplot2, car, rstatix,lmtest, ggpubr,psych, 
+               data.table, readxl, readr)
+
+if(!require(pacman)) install.packages("pacman")
+library(pacman)
+
+library(devtools)
+install_github('sbegueria/SPEI')
+install.packages('SPEI')
+library(devtools)
+install_github('sbegueria/SPEI@devel')
+
+### carregando dados de precipitação mensal 
+data1 = read.csv2(file.choose())
+View(data1) 
+
+### um mês ID1
+
+SPI_1<- spi(data1$ID1,1)
+SPI_1
+fitted.values<-SPI_1$fitted
+
+SPI_1a2<-as.data.frame(fitted.values)
+write.csv2(SPI_1a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_1_ID1.csv")
+
+plot(SPI_1, "SCCI, SPI-1")
+
+### um mês ID2
+
+SPI_1<- spi(data1$ID2,1)
+SPI_1
+fitted.values<-SPI_1$fitted
+
+SPI_1a2<-as.data.frame(fitted.values)
+write.csv2(SPI_1a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_1_ID2.csv")
+
+plot(SPI_1, "SCCI, SPI-1")
+
+
+### um mês ID3
+
+SPI_1<- spi(data1$ID3,1)
+SPI_1
+fitted.values<-SPI_1$fitted
+
+SPI_1a2<-as.data.frame(fitted.values)
+write.csv2(SPI_1a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_1_ID3.csv")
+
+plot(SPI_1, "SCCI, SPI-1")
+
+
+### um mês ID4
+
+SPI_1<- spi(data1$ID4,1)
+SPI_1
+fitted.values<-SPI_1$fitted
+
+SPI_1a2<-as.data.frame(fitted.values)
+write.csv2(SPI_1a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_1_ID4.csv")
+
+plot(SPI_1, "SCCI, SPI-1")
+
+### um mês ID5
+
+SPI_1<- spi(data1$ID5,1)
+SPI_1
+fitted.values<-SPI_1$fitted
+
+SPI_1a2<-as.data.frame(fitted.values)
+write.csv2(SPI_1a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_1_ID5.csv")
+
+plot(SPI_1, "SCCI, SPI-1")
+
+### um mês ID6
+
+SPI_1<- spi(data1$ID6,1)
+SPI_1
+fitted.values<-SPI_1$fitted
+
+SPI_1a2<-as.data.frame(fitted.values)
+write.csv2(SPI_1a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_1_ID6.csv")
+
+plot(SPI_1, "SCCI, SPI-1")
+
+
+### um mês ID7
+
+SPI_1<- spi(data1$ID7,1)
+SPI_1
+fitted.values<-SPI_1$fitted
+
+SPI_1a2<-as.data.frame(fitted.values)
+write.csv2(SPI_1a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_1_ID7.csv")
+
+plot(SPI_1, "SCCI, SPI-1")
+
+
+
+### 3 meses ID1
+data3 = read.csv2(file.choose())
+View(data3) 
+
+SPI_3<- spi(data3$ID1,1)
+SPI_3
+fitted.values<-SPI_3$fitted
+
+SPI_3a2<-as.data.frame(fitted.values)
+write.csv2(SPI_3a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_3_ID1.csv")
+plot(SPI_3, "SCCI, SPI-3")
+
+
+### 3 meses ID2
+SPI_3<- spi(data3$ID2,1)
+SPI_3
+fitted.values<-SPI_3$fitted
+
+SPI_3a2<-as.data.frame(fitted.values)
+write.csv2(SPI_3a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_3_ID2.csv")
+plot(SPI_3, "SCCI, SPI-3")
+
+
+### 3 meses ID3
+SPI_3<- spi(data3$ID3,1)
+SPI_3
+fitted.values<-SPI_3$fitted
+
+SPI_3a2<-as.data.frame(fitted.values)
+write.csv2(SPI_3a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_3_ID3.csv")
+plot(SPI_3, "SCCI, SPI-3")
+
+### 3 meses ID4
+SPI_3<- spi(data3$ID4,1)
+SPI_3
+fitted.values<-SPI_3$fitted
+
+SPI_3a2<-as.data.frame(fitted.values)
+write.csv2(SPI_3a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_3_ID4.csv")
+plot(SPI_3, "SCCI, SPI-3")
+
+### 3 meses ID5
+SPI_3<- spi(data3$ID5,1)
+SPI_3
+fitted.values<-SPI_3$fitted
+
+SPI_3a2<-as.data.frame(fitted.values)
+write.csv2(SPI_3a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_3_ID5.csv")
+plot(SPI_3, "SCCI, SPI-3")
+
+### 3 meses ID6
+SPI_3<- spi(data3$ID6,1)
+SPI_3
+fitted.values<-SPI_3$fitted
+
+SPI_3a2<-as.data.frame(fitted.values)
+write.csv2(SPI_3a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_3_ID6.csv")
+plot(SPI_3, "SCCI, SPI-3")
+
+
+### 3 meses ID7
+SPI_3<- spi(data3$ID7,1)
+SPI_3
+fitted.values<-SPI_3$fitted
+
+SPI_3a2<-as.data.frame(fitted.values)
+write.csv2(SPI_3a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigo_calibração_analise+chuva/Dados artigo/Resultados_SPI//SPI_3_ID7.csv")
+plot(SPI_3, "SCCI, SPI-3")
+
+
+
+
+### 12 meses 
+data12 = read.csv2(file.choose())
+View(data12) 
+
+SPI_12<- spi(data12$ID1,12)
+SPI_12
+fitted.values<-SPI_12$fitted
+plot(SPI_12)
+
+SPI_12a2<-as.data.frame(fitted.values)
+write.csv2(SPI_12a2, file = "G:/My Drive/PD - USP/04_Artigos/Artigos-PD-FAPESP/Artigo - Evento PPGGF - SPI/Dados SPI\\SPI_12ok.csv")
+
+
+
+spi<-spi(data12$p,1,  kernel = list(type = 'rectangular', shift = 0),
+         distribution = 'Gamma',  fit = 'ub-pwm',  na.rm = FALSE,
+         ref.start=NULL,  ref.end=NULL,  keep.x=FALSE,  params=NULL,
+         verbose=TRUE)
+
+plot(spi)
+
+spi_1 <- spi(data12[, "p"], 1)
+spi_12 <- spi(data12[, "p"], 12)
+spi_12
+plot(spi_12)
+
+fitted.values<-spi_12$fitted
+SPI_12ok<-as.data.frame(fitted.values)
+write.csv2(SPI_12ok, file = "G:/My Drive/PD - USP/04_Artigos/Artigos-PD-FAPESP/Artigo - Evento PPGGF - SPI/Dados SPI\\SPI_12ok3.csv")
