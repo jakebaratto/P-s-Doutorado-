@@ -16,11 +16,11 @@ Map.centerObject(roi,8)
 
 // Período de dados 
 
-var startdate = ee.Date.fromYMD(2004,1,1);
+var startdate = ee.Date.fromYMD(2003,1,1);
 var enddate = ee.Date.fromYMD(2023,12,31);
 
 var months = ee.List.sequence(1, 12)
-var years = ee.List.sequence(2004, 2022)
+var years = ee.List.sequence(2003, 2022)
 
 
 /// DADOS MODIS PARA A REAMOSTRAGEM
@@ -62,7 +62,7 @@ var chirpsResampled =  chirps.map(resampleImage);
 // ##Converter o dado para mensal
 
 var months = ee.List.sequence(1, 12)
-var years = ee.List.sequence(2004, 2022)
+var years = ee.List.sequence(2003, 2022)
 
 // ##Função para agregar dados de precipitação 
 
@@ -112,7 +112,7 @@ function fatorLST (img){
 
 }
 /// Dados LST modis 
-var temperature= ee.ImageCollection("MODIS/061/MOD11A2").select(['LST_Night_1km',"LST_Day_1km"])
+var temperature= ee.ImageCollection("MODIS/061/MYD11A2").select(['LST_Night_1km',"LST_Day_1km"])
                                       .filterDate(startdate,enddate)
                                       .filterBounds(roi)
                                     //  .filter(ee.Filter.calendarRange(10,12,'month'))
