@@ -16,7 +16,7 @@ Map.centerObject(roi,8)
 
 var chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/PENTAD")
 
-var startdate = ee.Date.fromYMD(2004,1,1);
+var startdate = ee.Date.fromYMD(2003,1,1);
 var enddate = ee.Date.fromYMD(2023,12,31);
 
 var yearFiltered = chirps.filter(ee.Filter.date(startdate, enddate))
@@ -26,7 +26,7 @@ var yearFiltered = chirps.filter(ee.Filter.date(startdate, enddate))
 // ##Converter o dado para mensal
 
 var months = ee.List.sequence(7, 9)
-var years = ee.List.sequence(2004, 2022)
+var years = ee.List.sequence(2003, 2022)
 
 // ##Função para agregar dados de precipitação 
 
