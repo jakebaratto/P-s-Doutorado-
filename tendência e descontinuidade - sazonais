@@ -1,0 +1,63 @@
+## Script desenvolvido para estimar a tendência e descontinuidade nos dados sazonais
+## Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+
+
+# Carregar pacotes necessários
+library(dplyr)
+library(tibble)
+library(trend)  # Supondo que os testes estão neste pacote
+library(readr) 
+
+### Identificar o diretório onde os dados estão 
+
+setwd("G:/My Drive/PD - USP/04_Artigos/Artigo - tendência - pontual")
+
+### Ler os dados em .csv
+dados <- read.csv2(file.choose())
+
+# Carregar pacotes necessários
+
+# Função para aplicar os testes e retornar os resultados organizados
+aplica_testes <- function(dados, periodo, var) {
+  dados_mes <- dados %>% filter(periodo == !!periodo)
+  
+  # Aplicando os testes
+  mk_result <- mk.test(dados_mes[[var]])
+  sens_result <- sens.slope(dados_mes[[var]])
+  pettitt_result <- pettitt.test(dados_mes[[var]])
+  snh_result <- snh.test(dados_mes[[var]])
+  br_result <- br.test(dados_mes[[var]])
+  
+  # Organizando os resultados de todos os testes em um data.frame
+  resultados_df <- tibble(
+    ID = periodo,
+    TAU = mk_result$estimate["tau"],
+    P.VA_MK = mk_result$p.value,
+    ZMK = mk_result$statistic,
+    Sens_Slope = sens_result$estimates,
+    K_Pettitt = pettitt_result$statistic,
+    P.VA_Pettitt = pettitt_result$p.value,
+    t_Pettitt = pettitt_result$alternative,
+    T0_SNHT = snh_result$statistic,
+    P.VA_SNHT = snh_result$p.value,
+    t_SNHT = snh_result$alternative,
+    R_Buishand = br_result$statistic,
+    P.VA_Buishand = br_result$p.value,
+    t_Buishand = br_result$alternative
+  )
+  
+  return(resultados_df)
+}
+
+# Lista dos meses
+meses <- c("JFM","AMJ","JAS","OND")
+
+# Aplicando para cada mês e organizando em um único dataframe
+resultados_por_mes <- bind_rows(lapply(meses, function(m) aplica_testes(dados, m, "ID4")))
+
+# Exibindo a tabela com os resultados
+print(resultados_por_mes)
+
+# Exibindo a tabela com os resultados será exportada, lembre-se de trocar o ID
+write_csv(resultados_por_mes, "resultados_teste_Sazonal_ID4.csv")
