@@ -1,0 +1,562 @@
+## Script desenvolvido para validar dados de produtos orbitais a partir 
+## Dos pontos amostrais em superfície para dasdos mensais.
+## Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+
+### Instalar e carregar os pacotes que serão utilizados 
+## Para instalar 
+if(!require(pacman)) install.packages("pacman")
+
+# Para carregar
+library(pacman)
+pacman::p_load(hydroGOF, terra, dplyr,cowplot,ggplot2, ggpubr, grDevices)
+# Para carregar
+
+
+### Para mais informações sobre o Rstudio 
+## <https://www.youtube.com/watch?v=WVogdSlk7gY&list=PLOw62cBQ5j9VE9X4cCCfFMjW_hhEAJUhU>
+
+# Direcione um dirertório - pasta em que estão os arquivos que serão trabalhos
+## Alterar \ para /
+
+setwd("")
+
+dados <- read.csv2(file.choose())
+
+#### Filtrar conforme o Mês
+
+Jan <- dados %>% filter(mes %in% c("jan"))
+Fev <- dados %>% filter(mes %in% c("fev"))
+Mar <- dados %>% filter(mes  %in% c("mar"))
+Abr <- dados %>% filter(mes %in% c("abr"))
+Mai <- dados %>% filter(mes %in% c("mai"))
+Jun <- dados %>% filter(mes %in% c("jun"))
+Jul <- dados %>% filter(mes%in% c("jul"))
+Ago <- dados %>% filter(mes %in% c("ago"))
+Set <- dados %>% filter(mes %in% c("set"))
+Out<- dados %>% filter(mes %in% c("out"))
+Nov<- dados %>% filter(mes %in% c("nov"))
+Dez <- dados %>% filter(mes%in% c("dez"))
+
+### separar meses
+X_Ja_ID4 <- Jan$ID4
+Y_Ja_ID4 <- Jan$ID4_ERA5
+
+## Formula de correlação linear 
+corID4 <- cor(X_Ja_ID4, Y_Ja_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_Ja_ID4 ~ X_Ja_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_Ja_ID4, X_Ja_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_Ja_ID4, X_Ja_ID4)
+
+# índice de concordância
+dID4 <- d(Y_Ja_ID4, X_Ja_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_Ja_ID4, X_Ja_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_J_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+resul_J_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+
+
+X_F_ID4 <- Fev$ID4
+Y_F_ID4 <- Fev$ID4_ERA5
+## Formula de correFlação linear 
+corID4 <- cor(X_F_ID4, Y_F_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_F_ID4 ~ X_F_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_F_ID4, X_F_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_F_ID4,X_F_ID4)
+
+# índice de concordância
+dID4 <- d(Y_F_ID4, X_F_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_F_ID4, X_F_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_F_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_F_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+X_M_ID4 <- Mar$ID4
+Y_M_ID4 <- Mar$ID4_ERA5
+
+## Formula de correFlação linear 
+corID4 <- cor(X_M_ID4, Y_M_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_M_ID4 ~ X_M_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_M_ID4, X_M_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_M_ID4,X_M_ID4)
+
+# índice de concordância
+dID4 <- d(Y_M_ID4, X_M_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_M_ID4, X_M_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_M_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_M_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+
+
+X_Ab_ID4 <- Abr$ID4
+Y_Ab_ID4 <- Abr$ID4_ERA5
+
+## Formula de correFlação linear 
+corID4 <- cor(X_Ab_ID4, Y_Ab_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_Ab_ID4 ~ X_Ab_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_Ab_ID4, X_Ab_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_Ab_ID4,X_Ab_ID4)
+
+# índice de concordância
+dID4 <- d(Y_Ab_ID4, X_Ab_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_Ab_ID4, X_Ab_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_Ab_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_Ab_ID4
+
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+
+
+X_Ma_ID4 <- Mai$ID4
+Y_Ma_ID4 <- Mai$ID4_ERA5
+
+## Formula de correFlação linear 
+corID4 <- cor(X_Ma_ID4, Y_Ma_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_Ma_ID4 ~ X_Ma_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_Ma_ID4, X_Ma_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_Ma_ID4,X_Ma_ID4)
+
+# índice de concordância
+dID4 <- d(Y_Ma_ID4, X_Ma_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_Ma_ID4, X_Ma_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_Ma_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_Ma_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+X_Jn_ID4 <- Jun$ID4
+Y_Jn_ID4 <- Jun$ID4_ERA5
+
+## Formula de correFlação linear 
+corID4 <- cor(X_Jn_ID4, Y_Jn_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_Jn_ID4 ~ X_Jn_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_Jn_ID4, X_Jn_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_Jn_ID4,X_Jn_ID4)
+
+# índice de concordância
+dID4 <- d(Y_Jn_ID4, X_Jn_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_Jn_ID4, X_Jn_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_Jn_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_Jn_ID4
+
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+X_Jl_ID4 <- Jul$ID4
+Y_Jl_ID4 <- Jul$ID4_ERA5
+
+
+## Formula de correFlação linear 
+corID4 <- cor(X_Jl_ID4, Y_Jl_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_Jl_ID4 ~ X_Jl_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_Jl_ID4, X_Jl_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_Jl_ID4,X_Jl_ID4)
+
+# índice de concordância
+dID4 <- d(Y_Jl_ID4, X_Jl_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_Jl_ID4, X_Jl_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_Jl_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_Jl_ID4
+
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+X_Ag_ID4 <- Ago$ID4
+Y_Ag_ID4 <- Ago$ID4_ERA5
+
+## Formula de correFlação linear 
+corID4 <- cor(X_Ag_ID4, Y_Ag_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_Ag_ID4 ~ X_Ag_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_Ag_ID4, X_Ag_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_Ag_ID4,X_Ag_ID4)
+
+# índice de concordância
+dID4 <- d(Y_Ag_ID4, X_Ag_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_Ag_ID4, X_Ag_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_Ag_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_Ag_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+X_S_ID4 <- Set$ID4
+Y_S_ID4 <- Set$ID4_ERA5
+
+
+## Formula de correFlação linear 
+corID4 <- cor(X_S_ID4, Y_S_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_S_ID4 ~ X_S_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_S_ID4, X_S_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_S_ID4,X_S_ID4)
+
+# índice de concordância
+dID4 <- d(Y_S_ID4, X_S_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_S_ID4, X_S_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_S_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_S_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+
+
+X_O_ID4 <- Out$ID4
+Y_O_ID4 <- Out$ID4_ERA5
+
+## Formula de correFlação linear 
+corID4 <- cor(X_O_ID4, Y_O_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_O_ID4 ~ X_O_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_O_ID4, X_O_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_O_ID4,X_O_ID4)
+
+# índice de concordância
+dID4 <- d(Y_O_ID4, X_O_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_O_ID4, X_O_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_O_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_O_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+dados_N<- filter(dados,mes==11)
+
+X_N_ID4 <- Nov$ID4
+Y_N_ID4 <- Nov$ID4_ERA5
+
+## Formula de correFlação linear 
+corID4 <- cor(X_N_ID4, Y_N_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_N_ID4 ~ X_N_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_N_ID4, X_N_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_N_ID4,X_N_ID4)
+
+# índice de concordância
+dID4 <- d(Y_N_ID4, X_N_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_N_ID4, X_N_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_N_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_N_ID4
+
+## Filtrar os dados por mês para que em cada mês seja calculado as métricas
+
+
+X_D_ID4 <- Dez$ID4
+Y_D_ID4 <- Dez$ID4_ERA5
+
+
+## Formula de correFlação linear 
+corID4 <- cor(X_D_ID4, Y_D_ID4)
+corID4        ## plotar o valor de correlação
+
+## Formúla de regressão 
+regID4 <- lm(Y_D_ID4 ~ X_D_ID4)
+
+R=c(summary(regID4))
+
+R2ID4 <- R$r.squared
+
+#ERRO MEDIO ABSOLUTO
+MAEID4 <- mae(Y_D_ID4, X_D_ID4)
+
+#RAIZ QUADRADA DO ERRO QUADRADO MEDIO
+RMSEID4 <- rmse(Y_D_ID4,X_D_ID4)
+
+# índice de concordância
+dID4 <- d(Y_D_ID4, X_D_ID4)
+
+# PBIAS
+
+pbiasID4 <- pbias(Y_D_ID4, X_D_ID4)
+
+### Criando tabela com os valores das métricas
+
+resul_D_ID4 <- data.frame(
+  Correlacao = corID4,
+  Regressao = R2ID4,
+  MAE = MAEID4,
+  RMSE = RMSEID4,
+  Concordancia = dID4,
+  PBIAS = pbiasID4
+)  
+
+resul_D_ID4
+
+### Como juntar todas as tabelas dos dados (ID4, ID5, ID8, ID9 e ID42)
+TABELA =matrix(c(resul_J_ID4,resul_F_ID4,resul_M_ID4,
+                 resul_Ab_ID4,resul_Ma_ID4, resul_Jn_ID4, resul_Jl_ID4,
+                 resul_Ag_ID4, resul_S_ID4,resul_O_ID4,resul_N_ID4, 
+                 resul_D_ID4),ncol=6,byrow=TRUE)
+
+## Plotar a tabela
+TABELA 
+
+
+### Exportando a tabela criada
+## os dados vão ser salvos na raíz do diretório inseridos no início
+## Lembrar de trocar o nome do satélite
+write.csv(TABELA, "Resultado_validação_Mensal_ID4_ERA5_novo_.csv", row.names = FALSE)
