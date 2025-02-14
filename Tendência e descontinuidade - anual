@@ -1,0 +1,104 @@
+## Script desenvolvido para estimar a tendência e descontinuidade nos dados mensais
+## Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dra. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+
+
+# Carregar pacotes necessários
+library(dplyr)
+library(tibble)
+library(trend)  # Certifique-se de que os testes como mk.test, sens.slope, etc., estão neste pacote
+library(readr)
+
+# Definir o diretório onde os dados estão
+setwd("")
+
+### Ler os dados em .csv
+dados <- read.csv2(file.choose())
+
+
+# Testes individuais para exibir resultados para todos os dados de "ID4"
+# Teste de Mann-Kendall
+
+mk_result <- mk.test(dados$ID1)
+print(mk_result)
+
+# Slope de Sen
+sens_result <- sens.slope(dados$ID1)
+print(sens_result)
+
+# Teste de Pettitt
+pettitt_result <- pettitt.test(dados$ID1)
+print(pettitt_result)
+
+# Teste SNHT
+snh_result <- snh.test(dados$ID1)
+print(snh_result)
+
+# Teste de Buishand
+br_result <- br.test(dados$ID1)
+print(br_result)
+
+
+###########################################################################
+
+mk_result <- mk.test(dados$ID2)
+print(mk_result)
+
+# Slope de Sen
+sens_result <- sens.slope(dados$ID2)
+print(sens_result)
+
+# Teste de Pettitt
+pettitt_result <- pettitt.test(dados$ID2)
+print(pettitt_result)
+
+# Teste SNHT
+snh_result <- snh.test(dados$ID2)
+print(snh_result)
+
+# Teste de Buishand
+br_result <- br.test(dados$ID2)
+print(br_result)
+
+##############################
+mk_result <- mk.test(dados$ID3)
+print(mk_result)
+
+# Slope de Sen
+sens_result <- sens.slope(dados$ID3)
+print(sens_result)
+
+# Teste de Pettitt
+pettitt_result <- pettitt.test(dados$ID3)
+print(pettitt_result)
+
+# Teste SNHT
+snh_result <- snh.test(dados$ID3)
+print(snh_result)
+
+# Teste de Buishand
+br_result <- br.test(dados$ID3)
+print(br_result)
+
+
+
+mk_result <- mk.test(dados$ID4)
+print(mk_result)
+
+# Slope de Sen
+sens_result <- sens.slope(dados$ID4)
+print(sens_result)
+
+# Teste de Pettitt
+pettitt_result <- pettitt.test(dados$ID4)
+print(pettitt_result)
+
+# Teste SNHT
+snh_result <- snh.test(dados$ID4)
+print(snh_result)
+
+# Teste de Buishand
+br_result <- br.test(dados$ID4)
+print(br_result)
+
+dados
