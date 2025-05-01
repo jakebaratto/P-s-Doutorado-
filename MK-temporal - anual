@@ -1,0 +1,31 @@
+# Criar gráfico ajustado para Rainfall (precipitação anual)
+plot <- ggplot(annual_data, aes(x = ano, y = rainfall)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(color = "blue", size = 2) +
+  geom_smooth(method = "lm", aes(group = 1), color = "red", se = FALSE, linetype = "dashed", linewidth = 1.5) +
+  labs(x = "Ano", y = "Precipitação (mm)") +
+  theme_minimal(base_size = 14) +
+  scale_x_continuous(breaks = annual_data$ano, labels = as.character(annual_data$ano)) +
+  scale_y_continuous(limits = c(1200, 3400), breaks = seq(1200, 3400, by = 200)) +
+  theme(axis.text.x = element_text(angle = 270, hjust = 1, vjust = 0.5)) +
+  
+  # Texto com p-value, Sen's Slope e ZMK
+  annotate("text", x = min(annual_data$ano), y = 3400, 
+           label = paste("p-valor:", format(p_value, decimal.mark = ","), "\n",  
+                         "Sen's Slope:", format(sen_curvature, decimal.mark = ","), "\n",
+                         "ZMK:", format(round(zmk, 2), decimal.mark = ",")),
+           hjust = 0, vjust = 1, size = 5, color = "black") +
+  
+  # Título "Rainfall (Annual) - Porto Alegre"
+  annotate("text", x = mean(annual_data$ano), y = 3400, 
+           label = "Precipitação (Anual) - SCCI", size = 6, color = "black", fontface = "bold") +
+  
+  # Ajuste de posicionamento das linhas e textos
+  annotate("segment", x = 2010, xend = 2012, y = 3400, yend = 3400, color = "blue", linewidth = 1.5) +
+  annotate("text", x = 2014, y = 3400, label = "Valores observados", hjust = 0, size = 5, color = "blue") +
+  
+  annotate("segment", x = 2010, xend = 2012, y = 3200, yend = 3200, color = "red", linewidth = 1.5, linetype = "dashed") +
+  annotate("text", x = 2014, y = 3200, label = "Linha de tendência (Linear)", hjust = 0, size = 5, color = "red")
+
+# Exibir o gráfico
+print(plot)
