@@ -1,0 +1,85 @@
+# Carregar pacotes necessários
+library(tidyr)
+library(readr)
+library(trend)
+library(ggplot2)
+library(dplyr)
+
+# Definir diretórios de entrada e saída
+input_file <- "G:/My Drive/PD - USP/04_Artigos/Artigo - analise espacial P e MK/BD_mensal.csv"
+output_dir <- "G:/My Drive/PD - USP/04_Artigos/Artigo - analise espacial P e MK/Resultados_MK"
+dir.create(output_dir, showWarnings = FALSE)
+
+
+# Carregar o dataset com separador de ponto e vírgula e garantindo a leitura correta de números decimais
+data <- read_delim(input_file, delim = ";", locale = locale(decimal_mark = ","))
+
+# Exibe as primeiras linhas do dataset para depuração
+head(data)
+
+# Verificar o nome das colunas no dataset
+colnames(data) <- tolower(trimws(colnames(data)))  
+colnames(data)[grepl("^id", colnames(data))] <- toupper(colnames(data)[grepl("^id", colnames(data))])  
+
+# Converter nome dos meses para inglês, caso esteja em português
+meses_pt_en <- c("jan" = "Jan", "fev" = "Feb", "mar" = "Mar", "abr" = "Apr", "mai" = "May", "jun" = "Jun", "jul" = "Jul", "ago" = "Aug", "set" = "Sep", "out" = "Oct", "nov" = "Nov", "dez" = "Dec")
+data$mes <- meses_pt_en[data$mes]
+
+# Filtrar dados para o local Porto Alegre (ID1) e mês de outubro (Oct)
+target_location <- "ID1"  
+target_month <- "Feb"
+
+# Filtrar pelo período de 1979 a 2023
+data <- data %>% filter(as.numeric(ano) >= 1981 & as.numeric(ano) <= 2022, mes == target_month)
+
+# Verificar se há dados suficientes
+if (nrow(data) < 3) {
+  stop("Erro: Não há dados suficientes para o mês de outubro entre 1981 e 2022.")
+}
+
+# Calcular a soma mensal
+monthly_data <- data %>%
+  group_by(ano) %>%
+  summarise(rainfall = sum(as.numeric(!!sym(target_location)), na.rm = TRUE)) %>%
+  mutate(ano = as.numeric(ano))
+
+# Calcular a tendência usando o teste de Mann-Kendall
+test_result <- mk.test(monthly_data$rainfall)
+p_value <- test_result$p.value
+zmk <- test_result$statistic
+
+# Calcular o Sen's Slope corretamente
+sen_result <- sens.slope(monthly_data$rainfall)
+sen_curvature <- sen_result$estimates
+
+# Criar gráfico ajustado para Rainfall (precipitação mensal)
+plot <- ggplot(monthly_data, aes(x = ano, y = rainfall)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(color = "blue", size = 2) +
+  geom_smooth(method = "lm", aes(group = 1), color = "red", se = FALSE, linetype = "dashed", linewidth = 1.5) +
+  labs(x = "Year", y = "Rainfall (mm)", subtitle = '(B)') +
+  theme_minimal(base_size = 14) +
+  scale_x_continuous(breaks = monthly_data$ano, labels = as.character(monthly_data$ano)) +
+  scale_y_continuous(limits = c(0, 600), breaks = seq(0, 600, by = 50)) +  # Intervalo de y ajustado
+  theme(axis.text.x = element_text(angle = 270, hjust = 1, vjust = 0.5)) +
+  
+  # Texto com p-value, Sen's Slope e ZMK
+  annotate("text", x = min(annual_data$ano), y = 600, 
+           label = paste("p-value:", format(p_value), "\n",  
+                         "Sen's Slope:", format(sen_curvature), "\n",
+                         "ZMK:", format(round(zmk, 2))),
+           hjust = 0, vjust = 1, size = 5, color = "black") +
+  
+  # Título "Rainfall (Oct) - Porto Alegre"
+  annotate("text", x = mean(monthly_data$ano), y = 560, 
+           label = "Rainfall (Feb) - CICS", size = 6, color = "black", fontface = "bold") +
+  
+  # Ajuste de posicionamento das linhas e textos
+  annotate("segment", x = 2012, xend = 2014, y = 580, yend = 580, color = "blue", linewidth = 1.5) +
+  annotate("text", x = 2015, y = 580, label = "Observed values", hjust = 0, size = 5, color = "blue") +
+  
+  annotate("segment", x = 2012, xend = 2014, y = 540, yend = 540, color = "red", linewidth = 1.5, linetype = "dashed") +
+  annotate("text", x = 2015, y = 540, label = "Trend line (Linear)", hjust = 0, size = 5, color = "red")
+
+# Exibir o gráfico
+print(plot)
