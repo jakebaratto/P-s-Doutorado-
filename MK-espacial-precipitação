@@ -1,0 +1,399 @@
+//// Script used for the development of the Post-Doctorate in the Department of Geography at USP by 
+///// Dr. Jakeline Baratto and funded by FAPESP (process: 2022/02383-3)
+///// Mann-Kendall and Sen's Slope test applied to rainfall data
+//// data can be made for annual, monthly and seasonal scalenal
+
+
+// Carregar a ROI (Região de Interesse)
+var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+
+// Centralizar o mapa na ROI
+Map.centerObject(roi, 8);
+
+// Definir as datas de início e fim do período de análise
+var startdate = ee.Date.fromYMD(1981, 1, 1);
+var enddate = ee.Date.fromYMD(2023, 12, 31);
+
+// Criar listas de meses e anos para a análise temporal
+// para alterar os períodos sazonais e mensais é só alterar os meses
+var months = ee.List.sequence(1, 12);
+var years = ee.List.sequence(1981, 2022);
+
+// Filtrar a coleção de imagens CHIRPS para o período e a área de interesse
+var coll = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+    .select('precipitation')
+    .filterDate(startdate, enddate)
+    .filterBounds(roi);
+
+// Verificar se a coleção não está vazia
+print('1- Total de imagens em `coll`:', coll.size());
+
+// Converter os dados diários para acumulados mensais
+var precipitacao_mensal_acum = ee.ImageCollection.fromImages(
+    years.map(function (y) {
+        return months.map(function (m) {
+            var precipitation_month = coll.filter(ee.Filter.calendarRange(y, y, 'year'))
+                .filter(ee.Filter.calendarRange(m, m, 'month'))
+                .sum()
+                .clip(roi);
+            return precipitation_month.set('year', y)
+                .set('month', m)
+                .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+        });
+    }).flatten()
+);
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: precipitacao_mensal_acum,//Coleção mensal 
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'precipitation', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'NOME'})
+
+print(chartP, ' Precipitação mensal')
+
+// Verificar se a coleção `precipitacao_mensal_acum` não está vazia
+print('2- Total de imagens em `precipitacao_mensal_acum`:', precipitacao_mensal_acum.size());
+
+// // Calcular a precipitação anual 
+var annualPrecipitation = ee.ImageCollection.fromImages(
+    years.map(function (year) {
+        var yearData = precipitacao_mensal_acum.filter(ee.Filter.calendarRange(year, year, 'year')).sum().clip(roi);
+        return yearData.set('year', year)
+            .set('system:time_start', ee.Date.fromYMD(year, 1, 1).millis());
+    })
+);
+
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: annualPrecipitation,//Coleção mensal 
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'precipitation', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'NOME'})
+
+print(chartP, ' Precipitação anual')
+
+// Verificar se a coleção `annualPrecipitation` não está vazia
+print('3 - Total de imagens em `annualPrecipitation`:', annualPrecipitation.size());
+
+// // //////Agupar os meses por anos para o calculo sazonal
+
+// var annualPrecipitation = ee.ImageCollection.fromImages(
+//     years.map(function (y) {
+//         var precipitacao_periodo = precipitacao_mensal_acum
+//             .filter(ee.Filter.eq('year', y))
+//             .filter(ee.Filter.calendarRange(1, 1, 'month'))
+//             .sum();
+
+//         // Verificar se há dados para o período, caso contrário definir como imagem de zeros com banda 'precipitation'
+//         precipitacao_periodo = ee.Algorithms.If(
+//             precipitacao_periodo.bandNames().size().gt(0),
+//             precipitacao_periodo,
+//             ee.Image(0).rename('precipitation').clip(roi)  // Renomear a banda para 'precipitation'
+//         );
+
+//         var total_precipitacao = ee.Image(precipitacao_periodo)
+//             .set('year', y)
+//             .set('system:time_start', ee.Date.fromYMD(y, 1, 1).millis());
+
+//         return total_precipitacao.clip(roi);
+//     })
+// );
+
+// print(annualPrecipitation)
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: annualPrecipitation,//Coleção mensal 
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'precipitation', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'NOME'})
+
+print(chartP, ' Precipitação mensal')
+// Configurar o filtro para análise de tendências
+var afterFilter = ee.Filter.lessThan({
+  leftField: 'system:time_start',
+  rightField: 'system:time_start'
+});
+
+// Otimização: Evitar o cálculo de pares desnecessários
+var joined = ee.ImageCollection(ee.Join.saveAll('after').apply({
+  primary: annualPrecipitation,
+  secondary: annualPrecipitation,
+  condition: afterFilter
+}));
+
+// Verificar se a coleção `joined` foi criada corretamente
+print('Total de imagens em `joined`:', joined.size());
+
+
+// Função para calcular o sinal entre duas imagens (i, j)
+var sign = function(i, j) {
+  return ee.Image(j).neq(i)  // Verifica se i e j são diferentes
+      .multiply(ee.Image(j).subtract(i).clamp(-1, 1))  // Calcula a diferença entre j e i e limita a -1 e 1
+      .int();  // Converte para inteiros para simplificar a contagem
+};
+
+// Contar o número de pares possíveis: n(n-1)/2, onde n é o número de observações
+var numObservations = annualPrecipitation.size();
+
+var numPairs = numObservations.multiply(numObservations.subtract(1)).divide(2);
+
+// Calcular os componentes de Kendall Tau (pares concordantes e discordantes)
+var kendallComponents = ee.ImageCollection(joined.map(function(current) {
+  var afterCollection = ee.ImageCollection.fromImages(current.get('after'));
+  return afterCollection.map(function(image) {
+    return ee.Image(sign(current, image)).unmask(0);  // Unmask para evitar pixels mascarados
+  });
+}).flatten());
+
+// Contar os pares concordantes e discordantes
+var concordantPairs = kendallComponents.map(function(image) {
+  return image.eq(1);  // Pares concordantes
+}).reduce('sum');
+
+var discordantPairs = kendallComponents.map(function(image) {
+  return image.eq(-1);  // Pares discordantes
+}).reduce('sum');
+
+// Cálculo de Kendall Tau corretamente: τ = (C - D) / (n(n-1)/2)
+var kendallTau = concordantPairs.subtract(discordantPairs)  // C - D
+    .divide(numPairs)  // Dividido pelo número total de pares possíveis
+    .rename('kendall_tau').clip(roi);
+
+// Visualização do Kendall Tau
+var palette = ['red', 'white', 'green'];
+Map.addLayer(kendallTau, {palette: palette, min: -1, max: 1}, 'Kendall Tau');
+
+// Exibir a camada de Kendall Tau
+print('Kendall Tau:', kendallTau);
+
+// Função para calcular a inclinação (Sen's Slope)
+var slope = function(i, j) {
+  var dateDifference = ee.Image(j).date().millis().subtract(ee.Image(i).date().millis());
+  return ee.Image(j).subtract(i)
+      .divide(dateDifference.divide(ee.Number(365.25 * 24 * 60 * 60 * 1000)))  // Conversão para anos
+      .rename('slope')
+      .float();
+};
+
+var slopes = ee.ImageCollection(joined.map(function(current) {
+  var afterCollection = ee.ImageCollection.fromImages(current.get('after'));
+  return afterCollection.map(function(image) {
+    return ee.Image(slope(current, image));
+  });
+}).flatten());
+
+var sensSlope = slopes.reduce(ee.Reducer.median(), 2).toFloat().clip(roi);  // Converte para Float
+Map.addLayer(sensSlope.clip(roi), {palette: palette, min: -1, max: 1}, 'Sens Slope');
+
+// Cálculo do intercepto
+var epochDate = ee.Date('1970-01-01').millis();
+var sensIntercept = annualPrecipitation.map(function(image) {
+  var epochDays = image.date().millis().subtract(epochDate).divide(365.25 * 24 * 60 * 60 * 1000).float();  // Correção para anos
+  return image.subtract(sensSlope.multiply(epochDays)).float();
+}).reduce(ee.Reducer.median(), 2).clip(roi);
+
+Map.addLayer(sensIntercept, {min: -1115.3, max: 3388.1}, 'Sens Intercept');
+
+// Values that are in a group (ties).  Set all else to zero.
+//// Ajustei o coll para anual precipitation
+var groups = annualPrecipitation.map(function(i) {
+  var matches = annualPrecipitation.map(function(j) {
+    return i.eq(j); // i and j are images.
+  }).sum();
+  return i.multiply(matches.gt(1));
+});
+
+// Compute tie group sizes in a sequence.  The first group is discarded.
+var group = function(array) {
+  var length = array.arrayLength(0);
+  // Array of indices.  These are 1-indexed.
+  var indices = ee.Image([1])
+      .arrayRepeat(0, length)
+      .arrayAccum(0, ee.Reducer.sum())
+      .toArray(1);
+  var sorted = array.arraySort();
+  var left = sorted.arraySlice(0, 1);
+  var right = sorted.arraySlice(0, 0, -1);
+  // Indices of the end of runs.
+  var mask = left.neq(right)
+  // Always keep the last index, the end of the sequence.
+      .arrayCat(ee.Image(ee.Array([[1]])), 0);
+  var runIndices = indices.arrayMask(mask);
+  // Subtract the indices to get run lengths.
+  var groupSizes = runIndices.arraySlice(0, 1)
+      .subtract(runIndices.arraySlice(0, 0, -1));
+  return groupSizes;
+};
+
+// See equation 2.6 in Sen (1968).
+var factors = function(image) {
+  return image.expression('b() * (b() - 1) * (b() * 2 + 5)');
+};
+
+var groupSizes = group(groups.toArray());
+var groupFactors = factors(groupSizes);
+var groupFactorSum = groupFactors.arrayReduce('sum', [0])
+      .arrayGet([0, 0]);
+
+var count = joined.count();
+
+var kendallVariance = factors(count)
+    .subtract(groupFactorSum)
+    .divide(18)
+    .float()
+    .clip(roi);
+    
+Map.addLayer(kendallVariance, {min: 1700, max: 85000}, 'kendallVariance');
+
+
+
+var S = concordantPairs.subtract(discordantPairs);
+var sign = function(i, j) {
+  return ee.Image(j).neq(i)  // Verifica se i e j são diferentes
+      .multiply(ee.Image(j).subtract(i).clamp(-1, 1))  // Calcula o sinal
+      .int();  // Converte para inteiros
+};
+var concordantPairs = kendallComponents.map(function(image) {
+  return image.eq(1);  // Identifica pares concordantes
+}).reduce('sum');
+
+var discordantPairs = kendallComponents.map(function(image) {
+  return image.eq(-1);  // Identifica pares discordantes
+}).reduce('sum');
+
+var S = concordantPairs.subtract(discordantPairs);
+
+// Garantir que S e kendallVariance tenham apenas uma banda e sem valores mascarados
+var S = S.unmask(0);  // Substituir valores mascarados por 0
+kendallVariance = kendallVariance.unmask(1);  // Substituir valores mascarados por 1 para evitar divisões por zero
+
+// Tratamento para divisões por zero
+var kendallVarianceSafe = kendallVariance.updateMask(kendallVariance.gt(0));
+
+// Cálculo de ZMK
+var pos = S.gt(0).multiply(S.subtract(1));  // Para S > 0
+var neg = S.lt(0).multiply(S.add(1));  // Para S < 0
+var zero = S.eq(0);  // Para S = 0
+
+var zmk = pos.divide(kendallVarianceSafe.sqrt())
+    .add(neg.divide(kendallVarianceSafe.sqrt()))
+    .add(zero).rename('ZMK').clip(roi)
+
+// Verificação do valor de ZMK
+print('ZMK Final:', zmk);
+
+// Adicionar ZMK ao mapa
+Map.addLayer(zmk.clip(roi), {min: -2, max: 2}, 'ZMK');
+
+
+// Verificação de valores de ZMK
+var stats = zmk.reduceRegion({
+  reducer: ee.Reducer.minMax(),
+  geometry: roi,
+  scale: 5000,  // Aumentar a escala para acelerar o processamento
+  bestEffort: true
+});
+
+print('Estatísticas de ZMK:', stats);
+
+
+// Função CDF para uma distribuição normal padrão
+function eeCdf(z) {
+  return ee.Image(0.5).multiply(
+    ee.Image(1).add(
+      ee.Image(z).divide(ee.Image(2).sqrt()).erf()
+    )
+  );
+}
+
+// Calcular p-valor com ajuste bicaudal
+var p = ee.Image(2).multiply(ee.Image(1).subtract(eeCdf(zmk.abs()))).clip(roi);
+
+// Visualizar p-valor
+Map.addLayer(p, {min: 0, max: 0.10, palette: ['green', 'yellow', 'red']}, 'P-Values');
+
+// Estatísticas do p-valor
+var pStats = p.reduceRegion({
+  reducer: ee.Reducer.minMax(),
+  geometry: roi,
+  scale: 500,
+  bestEffort: true
+});
+print('Estatísticas do p-valor:', pStats);
+
+// // Funções para CDF e P-Values
+// function eeCdf(z) {
+//   return ee.Image(0.5)
+//       .multiply(ee.Image(1).add(ee.Image(z).divide(ee.Image(2).sqrt()).erf()));
+// }
+
+// var p = ee.Image(1).subtract(eeCdf(zmk.abs())).clip(roi);
+// Map.addLayer(p.clip(roi), {min: 0, max: 0.10}, 'P-Values');
+
+// Adicionar camadas para tendências significativas
+Map.addLayer(p.lte(0.025), {min: 0, max: 1}, 'Significant Trends');
+
+// Assumindo que sensSlope está em mm/ano
+var sensSlope_mm_per_year = sensSlope;
+Map.addLayer(sensSlope_mm_per_year.clip(roi), {palette: palette, min: -100, max: 100}, 'Sens Slope mm/year');
+
+// Converter para mm/decada
+var sensSlope_mm_per_decade = sensSlope_mm_per_year.multiply(10).toFloat();
+Map.addLayer(sensSlope_mm_per_decade.clip(roi), {palette: palette, min: -100, max: 100}, 'Sens Slope mm/decade');
+
+
+// Exportações
+Export.image.toDrive({
+  image: kendallTau.clip(roi).toFloat(),
+  description: 'Kendall_Tau',
+  scale: 500,
+  region: roi,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: sensSlope.clip(roi).toFloat(),
+  description: 'Sens_Slope_mm_per_year',
+  scale: 500,
+  region: roi,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: zmk.clip(roi).toFloat(),
+  description: 'Z_Statistic',
+  scale: 500,
+  region: roi,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: p.clip(roi).toFloat(),
+  description: 'P_Values',
+  scale: 500,
+  region: roi,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: sensSlope_mm_per_decade.clip(roi),
+  description: 'Sens_Slope_mm_per_decade',
+  scale: 500,
+  region: roi,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
