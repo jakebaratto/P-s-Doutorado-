@@ -1,0 +1,108 @@
+#####Script used for the development of the Post-Doctorate in the Department of Geography at USP by Dr. Jakeline Baratto and funded by FAPESP (process: 2022/02383-3)
+##%######################################################%##
+#                                                          #
+####                   RANDOM FOREST                    ####
+#                                                          #
+##%######################################################%##
+
+if(!require(pacman)) install.packages("pacman")
+library(pacman)
+
+pacman::p_load(randomForest,caret,MASS)
+
+setwd("G:/My Drive/PD - USP/04_Artigos/Artigo - Estimativa tar/BD-novo")
+dados <- read.csv2(file.choose())
+
+
+#### Regressão ####
+
+# Verificar se tem algum NA
+any(is.na(dados))
+
+# Dividindo em treino e teste
+set.seed(123)
+intrain <- createDataPartition(y = dados$Tar, p = 0.7, list = FALSE)
+train <- dados[intrain,]
+test <- dados[-intrain,]
+
+### Ajuste dos Parâmetros ###
+
+set.seed(123)
+
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 3)
+
+# Neste caso o ajuste será feito apenas em relação ao mtry
+rfFit <- train(Tar ~ .,
+               method     = "rf",
+               tuneLength = 6,
+               trControl  = ctrl,
+               metric     = "RMSE",
+               data       = train)
+rfFit
+plot(rfFit)
+
+### Importância das Variáveis ###
+
+rf <- randomForest(Tar ~ ., data = train, importance = T, mtry = 3)
+
+# MeanDecreaseAccuracy: permutação
+importance(rf, type = 1)
+
+# MeanDecreaseGini: diminuição total nas impurezas do nó da divisão na variável, calculada em média para todas as árvores
+importance(rf, type = 2)
+
+# Gráfico da importância das variáveis
+varImpPlot(rf, sort = T)
+
+# Quantas vezes cada variável explicativa foi utilizada na construção das árvores
+varUsed(rf, count = T)
+
+# Predição
+
+par(mfrow=c(1,1))
+# Previsão das classes
+dtPredict <- predict(rf, newdata = test[,-7])
+
+# Previsão com probabilidades (aplicável para classificação)
+dtProbabilities <- predict(rf, newdata = test[,-7])
+
+# Calculando o erro 
+cbind(dtPredict, test$Tar) # juntando as colunas com o valor real e o predito
+plot(dtPredict, test$Tar) # gráfico de dispersão
+RMSE(dtPredict, test$Tar) # erro quadrático médio
+MAE(dtPredict, test$Tar) # erro absoluto médio
+
+results <- cbind(Real = test$Tar, Predicted = dtPredict)
+
+
+# Gráfico de dispersão
+plot(dtPredict, test$Tar, main = "Predicted vs Real", xlab = "Predicted", ylab = "Real")
+abline(0, 1, col = "red")
+
+# Exportar os dados preditos para um arquivo CSV
+write.csv(results, "resultados_random_forest_aqua.csv", row.names = FALSE)
+
+# Predição em todo o banco de dados
+dtPredictAll <- predict(rf, newdata = dados)
+
+# Calculando o erro no conjunto de teste (para validação)
+dtPredictTest <- predict(rf, newdata = test[,-7])
+
+mae <- MAE(dtPredictTest, test$Tar)  # erro absoluto médio
+rmse <- RMSE(dtPredictTest, test$Tar)  # erro quadrático médio
+
+# Juntando as colunas com o valor real e o predito para todo o conjunto de dados
+resultsAll <- cbind(Real = dados$Tar, Predicted = dtPredictAll)
+
+# Convertendo para data frame
+resultsAll <- as.data.frame(resultsAll)
+
+# Adicionando os erros calculados no conjunto de teste à tabela de resultados
+resultsAll$MAE_Test <- mae
+resultsAll$RMSE_Test <- rmse
+
+# Exportar os dados preditos para um arquivo CSV
+write.csv(resultsAll, "resultados_random_forest_all_data_aqua_novo.csv", row.names = FALSE)
+
