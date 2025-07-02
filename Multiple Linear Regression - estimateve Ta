@@ -1,0 +1,140 @@
+#### Script used for the development of the Post-Doctorate in the Department of Geography at USP by Dr. Jakeline Baratto and funded by FAPESP (process: 2022/02383-3)
+######################### Regressão Linear Múltipla #########################
+
+# Passo 1: Carregar os pacotes que serão usados
+
+if(!require(pacman)) install.packages("pacman")
+library(pacman)
+
+pacman::p_load(dplyr, car, rstatix, lmtest, ggpubr,
+               QuantPsyc, psych, scatterplot3d)
+if (!require(pacman)) install.packages("pacman")
+library(pacman)
+pacman::p_load(dplyr, car, rstatix, lmtest, ggpubr, QuantPsyc, psych, scatterplot3d, caret, stargazer)
+
+
+# Passo 2: Carregar o banco de dados
+
+# Importante: selecionar o diretório de trabalho (working directory)
+# Isso pode ser feito manualmente: Session > Set Working Directory > Choose Directory
+
+setwd("G:/My Drive/PD - USP/03_Dados_resultados_usar_PD_FAPESP/Regressão multipla")
+
+
+dados <- read.csv2(file.choose())
+glimpse(dados)
+
+## Construção do modelo:
+mod <- lm(tar ~ NDVI + lat+ long + alti + ts, dados)
+
+
+## Análise gráfica:
+par(mfrow=c(2,2))
+
+plot(mod)
+
+par(mfrow=c(1,1))
+
+
+## Normalidade dos resíduos:
+shapiro.test(mod$residuals)
+
+
+## Outliers nos resíduos:
+summary(rstandard(mod))
+
+
+## Independência dos resíduos (Durbin-Watson):
+durbinWatsonTest(mod)
+
+
+## Homocedasticidade (Breusch-Pagan):
+bptest(mod)
+
+
+## Ausência de Multicolinearidade
+
+pairs.panels(dados)
+### Multicolinearidade: r > 0.9 (ou 0.8)
+
+vif(mod)
+### Multicolinearidade: VIF > 10
+
+
+###### Criação de um segundo modelo
+mod2 <- lm(tar ~ NDVI + lat + long + ts, dados)
+
+mod3 <- lm(tar ~ NDVI + alti + ts, dados)
+mod4 <- lm(tar ~ NDVI + ts, dados)
+
+# Passo 4: Análise do modelo
+summary(mod)
+summary(mod2)
+summary(mod3)
+summary(mod4)
+
+## Obtenção dos coeficientes padronizados
+lm.beta(mod)
+lm.beta(mod4)
+
+
+## Obtenção do IC 95% para os coeficientes
+confint(mod)
+confint(mod4)
+
+
+# Comparação de modelos
+
+## AIC e BIC - Comparação entre quaisquer modelos
+AIC(mod, mod4)
+BIC(mod, mod4)
+
+
+## Para comparação entre modelos aninhados
+
+anova(mod, mod4)
+
+### O melhor será o com menor valor de RSS (residual sum of squares)
+
+
+
+# Passo 5: Gráfico de dispersão
+graph <- scatterplot3d(dados$tar ~ dados$NDVI + dados$lat + dados$long + dados$alti + dados$ts,
+                       pch = 16, angle = 30, color = "steelblue", box = FALSE,
+                       xlab="Temperatura (°C)", ylab="Tempo de sono", zlab="Notas")
+graph$plane3d(mod, col="black", draw_polygon = TRUE)
+
+
+
+##################### Métodos de seleção de modelos ###########################
+
+pacman::p_load(MASS)
+
+
+mod.inicial <- lm(tar ~ NDVI + lat + long + alti + ts, data = dados)
+mod.simples <- lm(tar ~ 1, data = dados)
+
+stepAIC(mod.inicial, scope = list(upper = mod.inicial,
+                                  lower = mod.simples), direction = "backward")
+
+
+stargazer(mod1, mod2, mod3, mod4, 
+          type = "text", 
+          title = "Comparação de Modelos de Regressão",
+          column.labels = c("Modelo 1", "Modelo 2", "Modelo 3", "Modelo 4"),
+          dep.var.labels = "tar",
+          covariate.labels = c("NDVI", "Latitude", "Longitude", "Altitude", "TS"),
+          out = "model_comparison.txt")
+
+library(kableExtra)
+
+# Criar tabela de MAE e RMSE
+mae_rmse_table <- data.frame(
+  Model = c("Model 1", "Model 2", "Model 3", "Model 4"),
+  MAE = c(mae1, mae2, mae3, mae4),
+  RMSE = c(rmse1, rmse2, rmse3, rmse4)
+)
+
+# Exibir a tabela
+kable(mae_rmse_table, caption = "Comparação de MAE e RMSE entre Modelos") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
