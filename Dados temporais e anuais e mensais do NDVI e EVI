@@ -1,0 +1,167 @@
+///Script para baixar dados temporais e anuais e mensais do NDVI e EVI
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE 
+/// desenvolvido por AmbiGEO (2023).
+// Scritp utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dr. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+
+
+var areaEstudo  = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso')
+
+// var areaEstudo = ee.FeatureCollection('users/jakelinebarattogeo/SCCI');
+
+Map.addLayer(areaEstudo, {color: 'red'}, 'Área de Estudo');
+
+
+// Definir período de análise
+var startdate = ee.Date.fromYMD(2003, 1, 1);
+var enddate = ee.Date.fromYMD(2022, 12, 31);
+var years = ee.List.sequence(2003, 2022);
+var months = ee.List.sequence(1, 12)
+// ==============================
+
+
+// Carregar a coleção de dados MODIS MOD13Q1 (NDVI e EVI) no GEE
+var modis = ee.ImageCollection('MODIS/061/MOD13Q1')
+ .filterDate(startdate, enddate)
+  .select(['NDVI', 'EVI', 'SummaryQA']);
+
+
+
+// Função para aplicar a máscara de qualidade, recortar para a área de estudo e aplicar o fator de escala
+function maskClipAndScale(image) {
+  // Seleciona a banda de qualidade SummaryQA
+  var qa = image.select('SummaryQA');
+  
+  // Cria uma máscara para pixels de alta qualidade (0: "Good Data, use with confidence")
+  var qualityMask = qa.eq(0);
+  
+  // Aplica a máscara, recorta para a área de estudo e aplica o fator de escala (0.0001)
+  return image
+    .updateMask(qualityMask)
+    .clip(areaEstudo)
+    .multiply(0.0001)
+    .copyProperties(image, ['system:time_start']);
+}
+
+// Aplica a função de máscara, recorte e fator de escala a toda a coleção
+var modisHighQuality = modis.map(maskClipAndScale);
+
+print('1 - Quantas imagens', modisHighQuality.size())
+
+// CALCULAR MÉDIA ANUAL DO NDVI
+// ==============================
+// Calcular a média anual do NDVI e EVI
+var IV_anual = ee.ImageCollection.fromImages(
+    years.map(function (year) {
+        var anual = modisHighQuality.filter(ee.Filter.calendarRange(year, year, 'year'))
+            .mean()
+            .clip(areaEstudo);
+        return anual.set('year', year)
+                    .set('system:time_start', ee.Date.fromYMD(year, 1, 1).millis());
+    })
+);
+
+print("NDVI e EVI Anual Médio:", IV_anual);
+
+// Preparar os dados para o gráfico com NDVI e EVI
+var yearlyChartData = IV_anual.map(function(image) {
+  var stats = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: areaEstudo,
+    scale: 250,
+    bestEffort: true
+  });
+  
+  return ee.Feature(null, {
+    'NDVI': stats.get('NDVI'), 
+    'EVI': stats.get('EVI'), 
+    'date': ee.Date(image.get('system:time_start')).format('YYYY')
+  });
+});
+
+// Criar o gráfico com NDVI e EVI
+var yearlyChart = ui.Chart.feature.byFeature(yearlyChartData, 'date', ['NDVI', 'EVI'])
+  .setOptions({
+    title: 'Média Anual do NDVI e EVI (2003-2022)',
+    hAxis: {title: 'Ano', format: 'YYYY'},
+    vAxis: {title: 'Índice de Vegetação'},
+    series: {
+      0: {color: 'green', label: 'NDVI'},
+      1: {color: 'blue', label: 'EVI'}
+    },
+    lineWidth: 2,
+    pointSize: 4
+  });
+
+print(yearlyChart);
+
+
+// Visualizar os dados de NDVI de alta qualidade, recortados e escalonados
+var ndviParams = {min: 0, max: 1, palette: ['white', 'green']};
+Map.addLayer(modisHighQuality.select('NDVI').mean(), ndviParams, 'NDVI Alta Qualidade Escalonado');
+
+// Visualizar os dados de EVI de alta qualidade, recortados e escalonados
+var eviParams = {min: 0, max: 1, palette: ['white', 'blue']};
+Map.addLayer(modisHighQuality.select('EVI').mean(), eviParams, 'EVI Alta Qualidade Escalonado');
+
+// Exportar os dados processados para o Google Drive (opcional)
+Export.image.toDrive({
+  image: modisHighQuality.select('NDVI').mean(),
+  description: 'NDVI_Alta_Qualidade_Escalonado',
+  scale: 250,
+  region: areaEstudo,
+  crs: 'EPSG:4326',
+  maxPixels: 1e13
+});
+
+//// Cálculo mensal
+// Calcular a média mensal de forma otimizada
+var IV_mensal_media = ee.ImageCollection.fromImages(
+  years.map(function(y) {
+    return months.map(function(m) {
+      var filtered = modisHighQuality
+        .filter(ee.Filter.calendarRange(y, y, 'year'))
+        .filter(ee.Filter.calendarRange(m, m, 'month'))
+        .mean(); // Cálculo da média mensal
+
+      return filtered.set('year', y)
+                     .set('month', m)
+                     .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+    });
+  }).flatten()
+);
+
+// Visualizar a coleção de imagens mensais otimizadas
+print('NDVI Mensal Médio Otimizado', IV_mensal_media);
+
+// Preparar os dados para o gráfico com NDVI e EVI
+var yearlyChartData = IV_mensal_media.map(function(image) {
+  var stats = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: areaEstudo,
+    scale: 250,
+    bestEffort: true
+  });
+  
+  return ee.Feature(null, {
+    'NDVI': stats.get('NDVI'), 
+    'EVI': stats.get('EVI'), 
+    'date': ee.Date(image.get('system:time_start')).format('YYYY')
+  });
+});
+
+// Criar o gráfico com NDVI e EVI
+var yearlyChart = ui.Chart.feature.byFeature(yearlyChartData, 'date', ['NDVI', 'EVI'])
+  .setOptions({
+    title: 'Média Anual do NDVI e EVI (2003-2022)',
+    hAxis: {title: 'Ano', format: 'YYYY'},
+    vAxis: {title: 'Índice de Vegetação'},
+    series: {
+      0: {color: 'green', label: 'NDVI'},
+      1: {color: 'blue', label: 'EVI'}
+    },
+    lineWidth: 2,
+    pointSize: 4
+  });
+
+print(yearlyChart);
