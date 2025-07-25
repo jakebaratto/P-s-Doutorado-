@@ -1,0 +1,201 @@
+///Script para baixar dados temporais anuais de NDVI e EVI para as classes de vegetação do Mapbiomas
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE 
+/// desenvolvido por AmbiGEO (2023).
+// Scritp utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dr. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+
+
+// --- 1. CONFIGURAÇÕES INICIAIS ---
+
+// Coleção MapBiomas - Carregar como ee.Image, pois é uma imagem multibanda
+var mapbiomasIntegration = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection9/mapbiomas_collection90_integration_v1');
+print('Dado mapbiomas (Image de integração)', mapbiomasIntegration);
+
+// Região de interesse (ROI) principal
+var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+Map.addLayer(roi, {color: 'blue'}, 'ROI Principal');
+Map.centerObject(roi, 10);
+
+// CLASSES DE INTERESSE NO MAPBIOMAS COLLECTION 9 (NOVAS CLASSES)
+var FORMACAO_FLORESTAL_ID = 3;    // ID da classe "Formação Florestal"
+var RESTINGA_ARBORIZADA_ID = 4;  // ID da classe "Restinga Arborizada"
+var RESTINGA_HERBACEA_ID = 34;   // ID da classe "Restinga Herbácea"
+
+
+// Período de Anos a Processar
+var startYear = 2003;
+var endYear = 2022;
+
+// Lista de anos para iterar
+var years = ee.List.sequence(startYear, endYear);
+
+// --- 2. PREPARAR A COLEÇÃO MAPBIOMAS POR ANO (A PARTIR DA IMAGEM DE INTEGRAÇÃO) ---
+var mapbiomasAnnualCollection = ee.ImageCollection(
+  years.map(function(year) {
+    var yearStr = ee.Number(year).format('%d');
+    var bandName = ee.String('classification_').cat(yearStr);
+    return mapbiomasIntegration.select(bandName).set('year', year);
+  })
+);
+print('MapBiomas Annual Collection (derivada da integração)', mapbiomasAnnualCollection);
+
+
+// --- 3. FUNÇÃO PARA CALCULAR NDVI E EVI MÉDIO POR ANO NA ÁREA COMBINADA DAS NOVAS CLASSES ---
+
+var calculateAnnualMeans = function(year) {
+  year = ee.Number(year);
+  var yearStr = year.format('%d');
+
+  // --- A) Obter Imagem de Classificação do MapBiomas para o Ano ---
+  var classificationImage = mapbiomasAnnualCollection
+                              .filter(ee.Filter.eq('year', year))
+                              .first();
+
+  // --- B) Criar Máscaras para cada classe de interesse ---
+  var formacaoFlorestalMask = classificationImage.eq(FORMACAO_FLORESTAL_ID)
+                                                 .selfMask()
+                                                 .clip(roi);
+
+  var restingaArborizadaMask = classificationImage.eq(RESTINGA_ARBORIZADA_ID)
+                                                  .selfMask()
+                                                  .clip(roi);
+                                                  
+  var restingaHerbaceaMask = classificationImage.eq(RESTINGA_HERBACEA_ID)
+                                                .selfMask()
+                                                .clip(roi);
+
+
+  // --- C) Combinar as Máscaras (Formação Florestal OU Restinga Arborizada OU Restinga Herbácea) ---
+  var combinedMask = formacaoFlorestalMask.unmask(0)
+                     .or(restingaArborizadaMask.unmask(0))
+                     .or(restingaHerbaceaMask.unmask(0))
+                     .selfMask();
+  // Map.addLayer(combinedMask, {palette: ['#006400']}, 'Máscara Combinada ' + yearStr, false); // Comentado para não poluir o mapa em loop
+
+
+  // --- D) Processar MODIS (NDVI e EVI) com a Máscara de Qualidade e a Máscara Combinada ---
+  var modis = ee.ImageCollection('MODIS/061/MOD13Q1')
+                  .filterDate(ee.Date.fromYMD(year, 1, 1), ee.Date.fromYMD(year, 12, 31))
+                  .filterBounds(roi); 
+
+  // Função para aplicar a máscara de qualidade e aplicar o fator de escala
+  var maskAndScaleModis = function(image) {
+    var qa = image.select('SummaryQA');
+    var qualityMask = qa.eq(0); 
+    return image
+      .updateMask(qualityMask)
+      .select(['NDVI', 'EVI'])
+      .multiply(0.0001)       
+      .copyProperties(image, ['system:time_start']);
+  };
+
+  var modisMetrics = modis.map(maskAndScaleModis);
+  
+  // Calcular a média anual de NDVI e EVI para o ano
+  var meanModisImage = modisMetrics.mean().clip(roi); 
+
+  // Aplicar a máscara combinada ANTES de calcular a média regional
+  var maskedModisImage = meanModisImage.updateMask(combinedMask);
+  // Map.addLayer(maskedModisImage.select('NDVI'), {min:0, max:1, palette: ['red', 'green']}, 'NDVI Mascarado ' + yearStr, false);
+
+
+  // Calcular o valor médio de NDVI e EVI para a área combinada
+  var reducedModis = maskedModisImage.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: roi.geometry(), 
+    scale: 250, 
+    maxPixels: 1e10
+  });
+
+  var meanNDVI = reducedModis.get('NDVI');
+  var meanEVI = reducedModis.get('EVI');
+
+  return ee.Feature(null, {
+    'year': year,
+    'mean_NDVI': meanNDVI,
+    'mean_EVI': meanEVI
+  });
+};
+
+// --- 4. EXECUTAR O PROCESSAMENTO PARA TODOS OS ANOS ---
+
+var annualMeanResults = years.map(calculateAnnualMeans);
+
+var finalMeanCollection = ee.FeatureCollection(annualMeanResults);
+print('Valores Médios Anuais de NDVI e EVI na Área Combinada (Formação Florestal, Restinga Arborizada e Herbácea):', finalMeanCollection);
+
+// --- 5. EXPORTAÇÃO DOS VALORES ---
+
+Export.table.toDrive({
+  collection: finalMeanCollection,
+  description: 'Annual_Mean_NDVI_EVI_Form_Restinga', 
+  folder: 'GEE_Exports_Means', 
+  fileNamePrefix: 'annual_mean_ndvi_evi_form_restinga', 
+  fileFormat: 'CSV',
+  selectors: ['year', 'mean_NDVI', 'mean_EVI'] 
+});
+
+print('\nExportação iniciada da tabela de médias anuais. Verifique a aba Tasks para baixar o CSV.');
+
+var chartAlt = ui.Chart.feature.groups({
+  features: finalMeanCollection,
+  xProperty: 'year',
+  yProperty: 'mean_NDVI',
+  seriesProperty: 'indice'
+});
+
+print(chartAlt); // No seu caso você não tem 'indice', então siga com o anterior
+ 
+
+var chartAlt = ui.Chart.feature.groups({
+  features: finalMeanCollection,
+  xProperty: 'year',
+  yProperty: 'mean_EVI',
+  seriesProperty: 'indice'
+});
+
+print(chartAlt); // No seu caso você não tem 'indice', então siga com o anterior
+ 
+
+
+
+// --- 7. ESPACIALIZAÇÃO DA JUNÇÃO DAS NOVAS CLASSES PARA UM ANO ESPECÍFICO ---
+
+// Defina o ano para a espacialização que deseja visualizar
+var yearToVisualize = 2020; // <--- Você pode mudar este ano!
+
+// Selecione a imagem de classificação do MapBiomas para o ano escolhido
+var classificationImageToVisualize = mapbiomasAnnualCollection
+                                      .filter(ee.Filter.eq('year', yearToVisualize))
+                                      .first();
+
+// Crie as máscaras para cada classe para o ano de visualização
+var formacaoFlorestalMaskVisualize = classificationImageToVisualize.eq(FORMACAO_FLORESTAL_ID)
+                                                                 .selfMask()
+                                                                 .clip(roi);
+
+var restingaArborizadaMaskVisualize = classificationImageToVisualize.eq(RESTINGA_ARBORIZADA_ID)
+                                                                  .selfMask()
+                                                                  .clip(roi);
+                                                                  
+var restingaHerbaceaMaskVisualize = classificationImageToVisualize.eq(RESTINGA_HERBACEA_ID)
+                                                                 .selfMask()
+                                                                 .clip(roi);
+
+// Combine as máscaras (Formação Florestal OU Restinga Arborizada OU Restinga Herbácea) para o ano de visualização
+var combinedSpatialMask = formacaoFlorestalMaskVisualize.unmask(0)
+                          .or(restingaArborizadaMaskVisualize.unmask(0))
+                          .or(restingaHerbaceaMaskVisualize.unmask(0))
+                          .selfMask();
+
+// Defina uma visualização para a máscara combinada (cores mais apropriadas para vegetação)
+var combinedVis = {
+  palette: ['#006400'], // Cor verde escura para áreas de vegetação combinadas
+  opacity: 0.7
+};
+
+// Adicione a camada da espacialização combinada ao mapa
+Map.addLayer(combinedSpatialMask, combinedVis, 'Form. Florestal + Restingas (' + yearToVisualize + ')');
+
+// Opcional: Adicionar a imagem de classificação original para contexto
+// Map.addLayer(classificationImageToVisualize, {min: 0, max: 69, palette: require('users/mapbiomas/modules:Palettes.js').get('classification9')}, 'Classificação MapBiomas ' + yearToVisualize, false);
