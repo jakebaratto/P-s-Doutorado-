@@ -1,0 +1,357 @@
+// Scritp utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dr. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+/// Script utilizodo foi adaptado de Iago Mendes
+/*
+  ========================================================================
+  AMBIENTAL PRO
+  -------------
+  Live - Detecção de Mudanças usando o Google Earth Engine
+  27/10/2021
+  
+  Por Iago Mendes
+  @oiagomendes
+  iagomoliv@gmail.com 
+https://www.frontiersin.org/journals/environmental-science/articles/10.3389/fenvs.2019.00187/full
+  ========================================================================
+*/
+
+// Período 
+var startyear = 2003;
+var endyear = 2022;
+
+// CRIAR LISTA PARA VARIÁVEL YEARS
+var years = ee.List.sequence(startyear,endyear);
+ 
+// CRIAR LISTA DE MESES PARA UTILIZAR NAS FUNÇÕES 
+var months = ee.List.sequence(1,12);
+ 
+// DEFINIR INÍCIO E FIM 
+var startdate = ee.Date.fromYMD(startyear,1,1);
+var enddate = ee.Date.fromYMD(endyear,12,31);
+
+
+// ========================================================================
+//Area estudo//
+var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+
+// var roi = ee.FeatureCollection ('users/jakelinebarattogeo/PEIC')
+
+Map.centerObject(roi);
+Map.addLayer(roi, {}, '1 - Área de Estudo');
+
+// ========================================================================
+
+// Função para filtrar pixels de boa qualidade no MODIS NDVI
+function maskQuality(image) {
+  var QA = image.select('DetailedQA');  
+  var mask = QA.bitwiseAnd(3).eq(0); 
+  return image.updateMask(mask); 
+}
+
+// Carregar coleção MOD13Q1 (NDVI do MODIS)
+var dataset = ee.ImageCollection('MODIS/006/MOD13Q1')
+              .filterBounds(roi)
+              .map(maskQuality)
+              .select('NDVI');
+
+// MODIS NDVI vem como NDVI x 10000, então precisamos escalar
+var ndvi = dataset.map(function(image) {
+  var scaled = image.multiply(0.0001);
+  return scaled.copyProperties(image, ['system:index', 'system:time_start']);
+});
+
+
+
+/// Calculo do NDVI mensal 
+var ndvi_mensal_media =  ee.ImageCollection.fromImages( 
+    
+    years.map(function (y) { //função ano
+    return months.map(function(m) {//função mês aninhada em ano
+    //Defina a variável DNVI 
+      var evi_month = ndvi.filter(ee.Filter.calendarRange(y, y, 'year'))//Filtro de ano
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))//Filtro de mês
+                    .mean() //acumulando os dados
+                    .clip(roi);//Recortando pela área de estudo
+                    
+      return evi_month.set('year', y)//Encerrando a função mês
+              .set('month', m) //inserir Mês
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1));//Definindo Data Ano.Mês e Dia
+                        
+    });
+  }).flatten() //empilha a coleção ano a ano, mês a mês
+              //Nivela coleções de coleções.
+);
+
+print('1 NDVI mensal', ndvi_mensal_media)
+
+///NDVI anual
+
+var ndvi_anual = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = ndvi.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .mean() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+print('2 - NDVI anual', ndvi_anual)
+
+/////=======================================================//////
+
+/// Calculo da média do NDVI por ano selecionado
+var iano = ndvi_mensal_media
+            .filterDate('2003-01-01', '2003-12-31')
+            .mean();
+
+print('3 - NDVI ANO', iano)
+
+var parametrosevi = {
+  min: -1, 
+  max: 1, 
+  palette: ['#ff0000','#ffff00','#008000']
+};
+
+// ========================================================================
+
+//////////////////// Long Term Average (Média de Longo Termo)
+
+var mltNDVI = ndvi_anual.mean();//valores anuais de NDVI média- 
+
+// Anomalias Absolutas
+var aaAno = iano.subtract(mltNDVI);
+
+var parametrosAA = {
+  min: -1,
+  max: 1,
+  palette: ['#ff0000','#ffff00','#008000']
+};
+
+Map.addLayer(mltNDVI.clip(roi), parametrosevi, '2- MLT');
+Map.addLayer(aaAno.clip(roi), parametrosAA, '3 - Anomalias Absolutas do ANO');
+
+// INTERPRETAÇÃO
+// -------------
+// Comparado à MLT...
+// Valor positivo (verde): vegetação mais "saudável" / houve ganho, crescimento
+// Valor negativo (vermelho): vegetação menos "saudável" / houve perda, remoção
+
+
+
+////Quantificar - comparado Ano com a média 
+
+var limiar = 0.1; // Threshold
+var mudancasAno_abs = aaAno.lte(-limiar).or(aaAno.gte(limiar)).selfMask();
+
+ Map.addLayer(mudancasAno_abs.clip(roi), { palette: ['0000ff'] }, '4 - Mudanças absolutas Ano-comparado com a média');
+
+///calcular a área de mudanças (positivas e negativas) 2003 com a média
+
+var diferencaAno = mudancasAno_abs.multiply(ee.Image.pixelArea()).divide(1e6) 
+//para converter para km²
+
+var area_mudanca_maskAno = diferencaAno.reduceRegion({
+  reducer: ee.Reducer.sum(), //quero somar a área total
+  geometry: roi,
+  scale:250, 
+  crs:'EPSG: 31982',//SIRGAS 2000 22S  
+ // bestEffort: true, 
+  maxPixels:1e13})
+
+var area_mudancaAno_media= ee.Number(area_mudanca_maskAno.get('NDVI')).format('%.2f')
+
+print('4 - Área total de mudança ANO comparado com a média',area_mudancaAno_media)
+
+///valores negativos(perda) comparado 2003 com a média 
+
+var limiar = 0.1; // Threshold
+var mudancasP = aaAno.lte(-limiar).selfMask();
+
+Map.addLayer(mudancasP.clip(roi), { palette: ['red'] }, '5 - Mudanças perda comparado com a média');
+
+///calcular a área de mudanças (ganho)
+
+var diferencaP = mudancasP.multiply(ee.Image.pixelArea()).divide(1e6) 
+//para converter para km²
+
+var area_mudanca_maskP = diferencaP.reduceRegion({
+  reducer: ee.Reducer.sum(), //quero somar a área total
+  geometry: roi,
+  scale:250, 
+  crs:'EPSG: 31982',//SIRGAS 2000 22S  
+ // bestEffort: true, 
+  maxPixels:1e13})
+
+var area_mudancaAnoP= ee.Number(area_mudanca_maskP.get('NDVI')).format('%.2f')
+
+print('5 - Área total de perda de vegetação comparado com a média',area_mudancaAnoP)
+
+//valores positivo (ganho) para o ano 2003
+
+var limiar = 0.1; // Threshold
+var mudancasG = aaAno.gte(limiar).selfMask();
+
+Map.addLayer(mudancasG.clip(roi), { palette: ['green'] }, 'Mudanças ganho comparado com a média ');
+
+///calcular a área de mudanças (perda)
+
+var diferencaG = mudancasG.multiply(ee.Image.pixelArea()).divide(1e6) 
+//para converter para km²
+
+var area_mudanca_maskG = diferencaG.reduceRegion({
+  reducer: ee.Reducer.sum(), //quero somar a área total
+  geometry: roi,
+  scale:250, 
+  crs:'EPSG: 31982',//SIRGAS 2000 22S  
+ // bestEffort: true, 
+  maxPixels:1e13})
+
+var area_mudancaAnoG= ee.Number(area_mudanca_maskG.get('NDVI')).format('%.2f')
+
+print('6 - Área total de ganho de vegetação',area_mudancaAnoG)
+
+
+// ========================================================================
+
+// Anomalias Padronizadas (Z-Score)
+// Z-Score = (Ano - MLT) / Desvio Padrão
+
+// Desvio padrão
+var dpndvi = ndvi_anual.reduce(ee.Reducer.stdDev());
+
+// Z-Score
+var apAno = aaAno.divide(dpndvi);
+
+
+var parametrosAP = {min: -3, max: 3, palette: ['#ff0000','#ffff00','#008000']};
+
+ Map.addLayer(apAno.clip(roi), parametrosAP, 'Anomalias Padronizadas Ano');
+
+
+// ========================================================================
+
+
+print('7 - Histograma do Desvio Padrão do ano',
+ui.Chart.image.histogram(apAno.clip(roi), roi, 30, null, 0.01)
+  .setOptions({
+    explorer: {}
+  })
+ );
+
+// ========================================================================
+///calculo do mudança por desvio padrão - todas
+
+var limiar = 0.5; // Threshold
+var mudancasAP= apAno.lte(-limiar).or(apAno.gte(limiar)).selfMask();
+
+ Map.addLayer(mudancasAP.clip(roi), { palette: ['0000ff'] }, 'Mudanças absolutas Ano-comparado com a DP');
+ 
+// ========================================================================
+///valores negativos(perda) comparado Ano com a média 
+var limiar_mx_dp = 2.0;
+var mudancasP = apAno.lte(-limiar_mx_dp).selfMask();
+
+Map.addLayer(mudancasP.clip(roi), { palette: ['red'] }, 'Mudanças perda comparado com a Desvio_P');
+
+///calcular a área de mudanças (ganho)
+
+var diferencaP = mudancasP.multiply(ee.Image.pixelArea()).divide(1e6) 
+//para converter para km²
+
+var area_mudanca_maskP = diferencaP.reduceRegion({
+  reducer: ee.Reducer.sum(), //quero somar a área total
+  geometry: roi,
+  scale:250, 
+  crs:'EPSG: 31982',//SIRGAS 2000 22S  
+ // bestEffort: true, 
+  maxPixels:1e13})
+
+var area_mudancaAnoP= ee.Number(area_mudanca_maskP.get('NDVI')).format('%.2f')
+
+print('8 - Área total de perda de vegetação comparado com o DP',area_mudancaAnoP)
+
+// ========================================================================
+//valores positivo (ganho) para o ano 
+
+var mudancasG = apAno.gte(limiar_mx_dp).selfMask();
+
+Map.addLayer(mudancasG.clip(roi), { palette: ['green'] }, 'Mudanças ganho comparado com a Desvio_P ');
+
+///calcular a área de mudanças (perda)
+
+var diferencaG = mudancasG.multiply(ee.Image.pixelArea()).divide(1e6) 
+//para converter para km²
+
+var area_mudanca_maskG = diferencaG.reduceRegion({
+  reducer: ee.Reducer.sum(), //quero somar a área total
+  geometry: roi,
+  scale:250, 
+  crs:'EPSG: 31982',//SIRGAS 2000 22S  
+ // bestEffort: true, 
+  maxPixels:1e13})
+
+var area_mudancaAnoG= ee.Number(area_mudanca_maskG.get('NDVI')).format('%.2f')
+
+print('9 - Área total de ganho de vegetação comparado ao DP',area_mudancaAnoG)
+
+//********************************Exportando Imagens Anual***********************/
+//Export.image.toDrive({
+//  image: lai_media,
+//  folder: 'PDJ',
+ // description: 'lai_500m'.concat(year),
+ // region: roi,
+ // scale: 500,
+ // maxPixels: 1e13
+  //}) 
+
+ //********************************Gráfico Indice Mensal de um ponto de análise ***********************/
+ 
+  var grafico = ui.Chart.image.series({
+   imageCollection: ndvi_mensal_media.select('NDVI'), //coleção mensal
+   region: ponto, 
+   reducer: ee.Reducer.mean(), 
+   scale: 250, 
+  xProperty: 'system:time_start'
+ })
+   .setOptions({
+     title: 'NDVI ao Longo do Tempo no ponto selecionado',
+     hAxis: {
+       title: 'Tempo'
+     },
+     vAxis: {
+       title: 'NDVI'
+    },
+     curveType: 'function'
+  });
+
+ print(grafico);
+ 
+ 
+/// EXPORTAR IMAGEM MUDANÇA PERDA COMPARADO DO ANO COM A MEDIA
+ Export.image.toDrive({
+image: mudancasP.clip(roi),
+folder: 'Detecção_mudanças',
+description: 'Perda da vegetação',
+region: roi,
+scale: 250,
+maxPixels: 1e13
+}) 
+
+Export.image.toDrive({
+image: mudancasG.clip(roi),
+folder: 'Detecção_mudanças',
+description: 'ganho da vegetação',
+region: roi,
+scale: 250,
+maxPixels: 1e13
+}) 
+
+
+
+
+ 
+ 
+ 
