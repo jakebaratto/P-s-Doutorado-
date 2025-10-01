@@ -1,0 +1,166 @@
+
+//This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, 
+//funded by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the research
+// Atribuição de direitos autorais e licença:
+// ECMWF/ERA5/DAILY - Licença ODC-BY-4.0
+// MODIS/006/MYD13Q1 - Licença USGS Landsat
+
+// ATENÇÃO:
+// O Google Earth Engine (GEE) é uma plataforma de processamento em nuvem.
+// Este script está otimizado para a plataforma GEE e deve ser executado nela.
+// Para usar este script, copie-o e cole-o no editor de código do GEE.
+
+/// dados temporais do ERA5 temperatura do ar para o manguezal
+
+var startdate = ee.Date.fromYMD(1979,1,1);
+var enddate = ee.Date.fromYMD(2020,12,31);
+var months = ee.List.sequence(1,12)
+var years = ee.List.sequence(1979, 2019)
+
+
+// ----- ENTRADAS -----
+// Limite de estudo (polígono SCCI)
+//var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+
+/// Manguezal
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso')
+Map.centerObject(roi, 8);
+
+// Período de dados
+var startdate = ee.Date.fromYMD(1979, 1, 1);
+var enddate = ee.Date.fromYMD(2020, 12, 31);
+
+/// DADOS MODIS (mantidos, mas não usados na análise de temperatura)
+var modis = ee.ImageCollection('MODIS/006/MYD13Q1')
+  .filterDate(startdate, enddate)
+  .select('NDVI');
+var modisNDVI = modis.select('NDVI');
+var scale = 250;
+
+// Função de reamostragem (mantida para consistência)
+var resampleImage = function(img) {
+  return img.resample('bicubic').reproject({
+    crs: modisNDVI.first().projection(),
+    scale: scale
+  });
+};
+
+// ----- DADOS ERA5 -----
+// Coleção de temperatura do ar (ERA5)
+var tar_era5 = ee.ImageCollection("ECMWF/ERA5/DAILY")
+  .select('mean_2m_air_temperature')
+  .filterDate(startdate, enddate)
+  .filterBounds(roi)
+  .map(resampleImage);
+
+// Função para converter temperatura de Kelvin para Celsius e clipar
+var tar_f = function(img) {
+  return img.select('mean_2m_air_temperature')
+    .subtract(273.15)
+    .rename('temperature_C')
+    .clip(roi)
+    .copyProperties(img, ['system:time_start', 'system:time_end']);
+};
+
+var tar_ERA = tar_era5.map(tar_f);
+print('1 - ERA5 (convertido para °C):', tar_ERA.size());
+
+
+//// Anual
+var IV_mensal_media = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = tar_ERA.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .mean() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+              
+print('Quantas imagens LAI', IV_mensal_media .size())
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: IV_mensal_media,//Coleção mensal 
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'temperature_C', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'NOME'})
+    .setOptions({
+      title: 'Temperatura do ar ',
+      hAxis: {title: 'Intervalo de tempo'},
+      vAxis: {title: 'LAI'},
+      lineWidth: 1,
+      pointSize: 5,
+      pointShape: 'square',
+      series: {
+          0:  {pointShape: 'circle',color: 'blue'},
+          1: { pointShape: 'triangle', rotation: 180, color: 'DeepSkyBlue'},
+          2: {pointShape: 'square' , color: 'SteelBlue'},
+           3: {pointShape: 'square' , color: 'Green'}
+          }}
+      )
+    .setChartType('ScatterChart');  
+
+print(chartP)
+
+
+//// mensal
+
+
+
+var createYearly =  ee.ImageCollection.fromImages(
+    
+    years.map(function (y) { //função ano
+    return months.map(function(m) {//função mês aninhada em ano
+    //Defina a variável precipitação 
+      var createMonthlyImage = tar_ERA.filter(ee.Filter.calendarRange(y, y, 'year'))//Filtro de ano
+                    .filter(ee.Filter.calendarRange(m,m, 'month'))//Filtro de mês
+                    .mean() //acumulando os dados
+                    .clip(roi);//Recortando pela área de estudo
+                    
+      return createMonthlyImage.set('year', y)//Encerrando a função mês
+              .set('month', m) //inserir Mês
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1));//Definindo Data Ano.Mês e Dia
+    });
+  }).flatten() //empilha a coleção ano a ano, mês a mês
+              //Nivela coleções de coleções.
+);
+
+
+print(createYearly)
+
+
+print('2 - Quantas imagens', createYearly.size())
+
+///// Gráfico mensal
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: createYearly,//Coleção mensal 
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'temperature_C', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'NOME'})
+    .setOptions({
+      title: 'Temperatura do ar ',
+      hAxis: {title: 'Intervalo de tempo'},
+      vAxis: {title: 'LAI'},
+      lineWidth: 1,
+      pointSize: 5,
+      pointShape: 'square',
+      series: {
+          0:  {pointShape: 'circle',color: 'blue'},
+          1: { pointShape: 'triangle', rotation: 180, color: 'DeepSkyBlue'},
+          2: {pointShape: 'square' , color: 'SteelBlue'},
+           3: {pointShape: 'square' , color: 'Green'}
+          }}
+      )
+    .setChartType('ScatterChart');  
+
+print(chartP)
