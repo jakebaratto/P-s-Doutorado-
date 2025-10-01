@@ -1,0 +1,230 @@
+#This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, funded 
+#by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the #research
+
+# Correlação anual entre IVs e a temperatura do ar (ERA5)
+
+
+## To install necessary packages
+if(!require(pacman)) install.packages("pacman")
+
+# Load packages with pacman
+library(pacman)
+pacman::p_load(hydroGOF, terra, dplyr, cowplot, ggplot2, ggpubr, grDevices, scales)
+
+### For more information about Rstudio
+## <https://www.youtube.com/watch?v=WVogdSlk7gY&list=PLOw62cBQ5j9VE9X4cCCfFMjW_hhEAJUhU>
+
+# Define the working directory
+setwd("G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento/BD-Rstudio")
+
+# Load the dataset
+dados <- read.csv2(file.choose())
+
+# Check the structure of the loaded data
+str(dados)
+head(dados)
+
+# Remove missing values by synchronizing data series
+dados_sync <- dados %>% select(Tar, EVI, NDVI) %>% na.omit()
+
+######## Correlation and Regression Calculation ########
+
+# Variables of interest
+X <- dados_sync$Tar
+Y_EVI <- dados_sync$EVI
+Y_NDVI <- dados_sync$NDVI
+
+# Calculate linear correlation for EVI and NDVI
+correlacao_EVI <- cor(X, Y_EVI, method = "pearson")
+correlacao_NDVI <- cor(X, Y_NDVI, method = "pearson")
+
+# Linear regression models for EVI and NDVI
+reg_EVI <- lm(Y_EVI ~ X)
+reg_NDVI <- lm(Y_NDVI ~ X)
+
+# Summarize models to extract information
+resumo_reg_EVI <- summary(reg_EVI)
+resumo_reg_NDVI <- summary(reg_NDVI)
+
+# Extract coefficient of determination (R²)
+R2_EVI <- resumo_reg_EVI$r.squared
+R2_NDVI <- resumo_reg_NDVI$r.squared
+
+# Extract p-values for coefficients of X variables (Tar)
+p_valor_EVI <- resumo_reg_EVI$coefficients[2, 4]
+p_valor_NDVI <- resumo_reg_NDVI$coefficients[2, 4]
+
+# Organize results into a table
+resultados <- data.frame(
+  Indicator = c("EVI", "NDVI"),
+  Correlation = c(correlacao_EVI, correlacao_NDVI),
+  R2 = c(R2_EVI, R2_NDVI),
+  P_Value = c(p_valor_EVI, p_valor_NDVI)
+)
+
+# Display the results table in the console
+print(resultados)
+
+######## Scatter Plot with Statistical Information ########
+
+G1 = ggplot(dados_sync, aes(x = Tar)) +
+  # Scatter plot for EVI and NDVI
+  geom_point(aes(y = EVI, color = "EVI"), alpha = 0.7, size = 3) +
+  geom_point(aes(y = NDVI, color = "NDVI"), alpha = 0.7, size = 3) +
+  
+  # Linear trend lines for EVI and NDVI
+  geom_smooth(aes(y = EVI, color = "EVI"), method = "lm", linetype = "dashed", se = FALSE) +
+  geom_smooth(aes(y = NDVI, color = "NDVI"), method = "lm", linetype = "dashed", se = FALSE) +
+  
+  
+  # Annotations of R, R² and p-value on the plot
+  annotate("text", x = min(dados_sync$Tar), y = 0.42, hjust = 0,
+           label = paste("EVI: r =", format(round(correlacao_EVI, 2), decimal.mark = "."),
+                         "\nR² =", format(round(R2_EVI, 2), decimal.mark = "."),
+                         "\nP-Value =", format(round(p_valor_EVI, 3), decimal.mark = ".")),
+           color = "black", size = 4) +
+  
+  annotate("text", x = min(dados_sync$Tar), y = max(dados_sync$NDVI) * 0.9, hjust = 0,
+           label = paste("NDVI: r =", format(round(correlacao_NDVI, 2), decimal.mark = "."),
+                         "\nR² =", format(round(R2_NDVI, 2), decimal.mark = "."),
+                         "\nP-Value =", format(round(p_valor_NDVI, 3), decimal.mark = ".")),
+           color = "black", size = 4) +
+  
+  # Plot configurations
+  labs(
+    x = "Air Temperature (Tar)",
+    y = "Vegetation Indices (EVI and NDVI)",
+    color = "", title = "(A)"
+  ) +
+  
+  # Apply shades of green
+  scale_color_manual(values = c("EVI" = "#32CD32", "NDVI" = "#006400")) +
+  
+  # Replace commas with points on axes (for English locale)
+  scale_x_continuous(labels = scales::label_number(decimal.mark = ".")) +
+  scale_y_continuous(labels = scales::label_number(decimal.mark = ".")) +
+  
+  # Plot style
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0, size = 14, face = "bold"),
+    legend.position = "bottom"
+  )
+
+#width = 800, height = 600
+
+####################################LAI####################################
+
+# Remove missing values by synchronizing data series
+dados_sync <- dados %>% select(Tar, LAI) %>% na.omit()
+
+######## Correlation and Regression Calculation ########
+
+# Variables of interest
+X <- dados_sync$Tar
+Y_LAI <- dados_sync$LAI
+
+
+# Calculate linear correlation for LAI
+correlacao_LAI <- cor(X, Y_LAI, method = "pearson")
+
+
+# Linear regression models for LAI
+reg_LAI <- lm(Y_LAI ~ X)
+
+
+# Summarize models to extract information
+resumo_reg_LAI <- summary(reg_LAI)
+
+
+# Extract coefficient of determination (R²)
+R2_LAI <- resumo_reg_LAI$r.squared
+
+
+# Extract p-values for coefficients of X variables (Tar)
+p_valor_LAI <- resumo_reg_LAI$coefficients[2, 4]
+
+# Organize results into a table
+resultados <- data.frame(
+  Indicator = c("LAI"),
+  Correlation = c(correlacao_LAI),
+  R2 = c(R2_LAI),
+  P_Value = c(p_valor_LAI) # Corrected to p_valor_LAI
+)
+
+# Display the results table in the console
+print(resultados)
+
+######## Scatter Plot with Statistical Information ########
+
+########## Calculation of Statistical Parameters ##########
+modelo_LAI <- lm(LAI ~ Tar, data = dados_sync)
+correlacao_LAI <- cor(dados_sync$Tar, dados_sync$LAI)
+R2_LAI <- summary(modelo_LAI)$r.squared
+p_valor_LAI <- summary(modelo_LAI)$coefficients[2, 4]
+
+########## Scatter Plot with Statistical Information ##########
+
+G2 = ggplot(dados_sync, aes(x = Tar)) +
+  # Scatter plot for LAI
+  geom_point(aes(y = LAI, color = "LAI"), alpha = 0.7, size = 3) +
+  
+  # Linear trend line for LAI
+  geom_smooth(aes(y = LAI, color = "LAI"), method = "lm", linetype = "dashed", se = FALSE) +
+  
+  # Annotations of r, R² and p-value on the plot
+  annotate("text",
+           x = min(dados_sync$Tar, na.rm = TRUE),
+           y = 0.2, # Now fixed, because the axis starts at 0
+           hjust = 0,
+           label = paste("LAI: r =", format(round(correlacao_LAI, 2), decimal.mark = "."),
+                         "\nR² =", format(round(R2_LAI, 2), decimal.mark = "."),
+                         "\nP-Value =", format(round(p_valor_LAI, 3), decimal.mark = ".")),
+           color = "black", size = 4) +
+  
+  # Plot configurations
+  labs(
+    title = "(B)",
+    x = "Air Temperature (Tar)",
+    y = "Leaf Area Index (LAI)",
+    color = ""
+  ) +
+  
+  # Apply shades of green
+  scale_color_manual(values = c("LAI" = "#527d3e")) +
+  
+  # Replace commas with points on axes and FORCE Y-axis to start at zero
+  scale_x_continuous(labels = scales::label_number(decimal.mark = ".", big.mark = "")) +
+  scale_y_continuous(labels = scales::label_number(decimal.mark = ".", big.mark = ""), limits = c(0, NA)) +
+  
+  # Plot style
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0, size = 14, face = "bold"), # Title aligned left
+    legend.position = "bottom"
+  )
+
+G2
+
+
+#width = 900, height = 500
+
+plot_grid(G1, G2, ncol = 2)
+
+# (Seu código para criar G1 e G2 continua o mesmo)
+
+# Combinar os gráficos em um único objeto
+final_plot <- plot_grid(G1, G2, ncol = 2)
+
+# Opcional: exibir o gráfico combinado no RStudio
+print(final_plot)
+
+# Salvar como PNG com 300 DPI. O tamanho em pixels será (width * dpi) x (height * dpi)
+ggsave(
+  "meu_grafico_combinado_alta_res.png",
+  plot = final_plot,
+  width = 22,          # Largura em cm
+  height = 12,         # Altura em cm
+  units = "cm",
+  dpi = 300            # A mágica da alta resolução acontece aqui!
+)
