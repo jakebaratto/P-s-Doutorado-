@@ -1,0 +1,207 @@
+///This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, 
+//funded by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the research
+
+// Teste de regressão usando script do python, o principio 
+//**  Correlação linear de pearson deu certo - porém dados separados em dois períodos**//
+/// Um período só juntando todos os dados mensais (2003-2019)
+
+
+///  Correlação entre ERA5 temperatura do ar e NDVI e EVI Mensal e sazonal
+
+/// Área de estudo
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso');
+Map.centerObject(roi, 8);
+
+// Período de dados
+var startdate = ee.Date.fromYMD(2003, 1, 1);
+var enddate = ee.Date.fromYMD(2020, 12, 31);
+var months = ee.List.sequence(12, 12);
+var years = ee.List.sequence(2003, 2019);
+
+/// DADOS MODIS PARA A REAMOSTRAGEM
+var modis = ee.ImageCollection('MODIS/006/MYD13Q1')
+  .filterDate(startdate, enddate)
+  .select('NDVI');
+
+var modisNDVI = modis.select('NDVI');
+var scale = 250;
+
+var resampleImage = function(img) {
+  return img.resample('bicubic').reproject({
+    crs: modisNDVI.first().projection(),
+    scale: scale
+  });
+};
+
+// ERA5 Temperatura do ar
+var tar_era5 = ee.ImageCollection("ECMWF/ERA5/DAILY")
+  .select('mean_2m_air_temperature')
+  .filterDate(startdate, enddate)
+  .filter(ee.Filter.calendarRange(12, 12, 'month'))
+  .filterBounds(roi)
+  .map(resampleImage);
+
+print('1 - ERA5 bruto:', tar_era5.size());
+
+var tar_f = function(img){
+  return img.select('mean_2m_air_temperature').subtract(273.15).rename('temperature_C')
+           .clip(roi)
+           .copyProperties(img, ['system:time_start', 'system:time_end']);
+};
+
+var tar_ERA = tar_era5.map(tar_f);
+
+var createYearly_temp = ee.ImageCollection.fromImages(
+  years.map(function (year) {
+    var anual = tar_ERA.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .mean().clip(roi);
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1));
+}));
+
+print('2 - Temperatura anual:', createYearly_temp.size());
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: createYearly_temp,
+    regions: roi,
+    reducer: ee.Reducer.mean(),
+    band: 'temperature_C',
+    scale: 250,
+    xProperty: 'system:time_start',
+    seriesProperty: 'NOME'})
+.setOptions({
+  title: 'Temperatura do ar (OND)',
+  hAxis: {title: 'Ano'},
+  vAxis: {title: 'Temperatura (°C)'}
+});
+print(chartP);
+
+// NDVI/EVI MODIS filtrado por qualidade
+var modis_iv = ee.ImageCollection('MODIS/061/MOD13Q1')
+  .filterDate(startdate, enddate)
+  .filter(ee.Filter.calendarRange(12, 12, 'month'))
+  .select(['NDVI', 'EVI', 'SummaryQA']);
+
+function maskClipAndScale(image) {
+  var qa = image.select('SummaryQA');
+  var qualityMask = qa.eq(0);
+  var scaled = image.select(['NDVI', 'EVI']).multiply(0.0001);
+  return scaled.updateMask(qualityMask).clip(roi)
+              .copyProperties(image, ['system:time_start']);
+}
+
+var IV = modis_iv.map(maskClipAndScale);
+
+var IV_mensal_media = ee.ImageCollection.fromImages(
+  years.map(function (year) {
+    var anual = IV.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .mean().clip(roi);
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1));
+}));
+
+print('3 - NDVI anual:', IV_mensal_media.size());
+
+var chartIV = ui.Chart.image.seriesByRegion({
+    imageCollection: IV_mensal_media,
+    regions: roi,
+    reducer: ee.Reducer.mean(),
+    band: 'NDVI',
+    scale: 250,
+    xProperty: 'system:time_start',
+    seriesProperty: 'NOME'})
+.setOptions({
+  title: 'NDVI (OND)',
+  hAxis: {title: 'Ano'},
+  vAxis: {title: 'NDVI'}
+});
+print(chartIV);
+
+// Join temporal NDVI e Temperatura
+var innerJoin = ee.Join.inner();
+var filterTimeEq = ee.Filter.equals({
+  'leftField': 'system:time_start',
+  'rightField': 'system:time_start'
+});
+
+var innerJoined = innerJoin.apply(IV_mensal_media, createYearly_temp, filterTimeEq);
+
+var joined_collections_temp = innerJoined.map(function(feature) {
+  return ee.Image.cat(feature.get('primary'), feature.get('secondary'));
+});
+
+var colletion = ee.ImageCollection(joined_collections_temp);
+print('4 - Coleção combinada:', colletion);
+
+// Regressão linear
+var linearFit = colletion.select(['temperature_C', 'NDVI'])
+  .reduce(ee.Reducer.linearFit());
+
+print('Regressão Linear:', linearFit);
+Map.addLayer(linearFit, {min: 0, max: [0.18, 20, -0.18], bands: ['scale', 'offset', 'scale']}, 'T vs NDVI trend');
+
+// Correlação NDVI e Temperatura
+var linear_correlTNDVI = colletion.select(['NDVI', 'temperature_C'])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+
+print('Correlação NDVI x T:', linear_correlTNDVI);
+
+var mean_corr_T_NDVI = linear_correlTNDVI.select('correlation').reduceRegion({
+  reducer: ee.Reducer.minMax(),
+  geometry: roi,
+  scale: 250,
+  maxPixels: 1e13
+});
+print('Valores extremos correlação NDVI x T:', mean_corr_T_NDVI);
+
+Map.addLayer(linear_correlTNDVI.select('correlation'), {min: -0.4, max: 0.9, palette: ['blue', 'white', 'green']}, 'Correl T x NDVI');
+
+Export.image.toDrive({
+  image: linear_correlTNDVI.select('correlation'),
+  folder: 'Correl_TAR_mensal',
+  description: 'Correl_TAR_NDVI2003-2019_Fev',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+});
+
+Export.image.toDrive({
+  image: linear_correlTNDVI.select('p-value'),
+  folder: 'Correl_TAR_mensal',
+  description: 'Pvalue_TAR_NDVI2003-2019_Fev',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+});
+
+// Correlação EVI e Temperatura
+var linear_correlTEVI = colletion.select(['EVI', 'temperature_C'])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+
+var mean_corr_T_EVI = linear_correlTEVI.select('correlation').reduceRegion({
+  reducer: ee.Reducer.minMax(),
+  geometry: roi,
+  scale: 250,
+  maxPixels: 1e13
+});
+print('Valores extremos correlação EVI x T:', mean_corr_T_EVI);
+
+Export.image.toDrive({
+  image: linear_correlTEVI.select('correlation'),
+  folder: 'Correl_TAR_mensal',
+  description: 'Correl_TAR_EVI2003-2019_Fev',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+});
+
+Export.image.toDrive({
+  image: linear_correlTEVI.select('p-value'),
+  folder: 'Correl_TAR_mensal',
+  description: 'Pvalue_TAR_EVI2003-2019_Fev',
+  region: roi,
+  scale: 250,
+  maxPixels: 1e13
+});
