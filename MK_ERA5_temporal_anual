@@ -1,0 +1,108 @@
+#This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, funded #by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the #research
+
+# MK anual para temperatura do ar (ERA5)
+
+library(tidyr)
+library(readr)
+library(trend)
+library(ggplot2)
+library(dplyr)
+
+# Definir o caminho do arquivo
+# Note: In a real environment, you might need to adjust this path or
+# ensure the file is accessible in the working directory.
+input_file <- "G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento/ERA5_manguezal_1979-2019_mensal.csv" # Assuming the file is in the same directory for simplicity
+output_dir <- "G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento" # Using a relative path for output directory
+dir.create(output_dir, showWarnings = FALSE)
+
+# Carregar o dataset com separador de ponto e vírgula e garantindo a leitura correta de números decimais
+# Using read_csv2 for semicolon-separated files with comma as decimal mark
+data_monthly <- read_csv2(input_file, locale = locale(decimal_mark = ","))
+
+# Exibir os primeiros registros do dataset para depuração
+message("Primeiros registros do dataset mensal:")
+print(head(data_monthly))
+
+# Padronizar os nomes das colunas
+colnames(data_monthly) <- tolower(trimws(colnames(data_monthly)))
+
+# Remover linhas com NA na coluna 'temperature' do dataset mensal, se houver
+data_monthly <- data_monthly %>% drop_na(temperature)
+
+# Agrupar dados mensais em dados anuais, calculando a média da temperatura por ano
+# This is the core change for annual aggregation
+data_annual <- data_monthly %>%
+  group_by(year) %>%
+  summarise(
+    temperature = mean(temperature, na.rm = TRUE), # Calculate annual mean temperature
+    .groups = 'drop' # Drop the grouping after summarising
+  )
+
+message("\nPrimeiros registros do dataset anual agregado:")
+print(head(data_annual))
+
+# Teste de Mann-Kendall e inclinação de Sen na série anual
+mk_test <- mk.test(data_annual$temperature)
+zmk <- mk_test$statistic
+p_value <- mk_test$p.value
+sen_slope_result <- sens.slope(data_annual$temperature)
+sen_curvature <- round(sen_slope_result$estimates, 3)
+
+# Calcular a inclinação da regressão linear (LM Slope) na série anual
+lm_model <- lm(temperature ~ year, data = data_annual)
+slope_lm <- round(coef(lm_model)["year"], 3)
+
+# Definir um placeholder para 'station' para que o código seja executável
+# Em um cenário real, 'station' precisaria ser definido com valores reais
+#station <- list(label = "Placeholder Label", name = "Placeholder Station Name")
+
+# Criar o gráfico com os dados anuais
+plot <- ggplot(data_annual, aes(x = year, y = temperature)) + # Use data_annual and corrected 'temperature'
+  geom_line(color = "orange", linewidth = 1) +
+  geom_point(color = "orange", size = 2) +
+  geom_smooth(method = "lm", aes(group = 1), color = "red", se = FALSE,
+              linetype = "dashed", linewidth = 1.5) +
+  labs(x = "Year", y = "Mean Annual Temperature (°C)") + # Updated y-axis label
+  theme_minimal(base_size = 14) +
+  # Modificação aqui: Definir os limites e intervalos do eixo Y conforme solicitado
+  scale_y_continuous(breaks = seq(15, 26, by =1), limits = c(15, 26)) +
+  scale_x_continuous(
+    breaks = seq(min(data_annual$year), max(data_annual$year), by = 2),
+    labels = as.character(seq(min(data_annual$year), max(data_annual$year), by = 2))
+  ) +
+  theme(axis.text.y = element_text(size = 16),
+        axis.text.x = element_text(angle = 270, hjust = 1, vjust = 0.5, size = 16)) +
+  # Ajustar as posições Y das anotações para se adequarem aos novos limites do eixo Y
+  annotate("text", x = min(data_annual$year), y = 17, # Ajustado para o topo do gráfico
+           label = paste("p-value:", sprintf("%.3f", p_value), "\n",
+                         "Sen's Slope:", sen_curvature, "°C/year", "\n",
+                         "LM Slope:", slope_lm, "°C/year", "\n",
+                         "ZMK:", round(zmk, 2)),
+           hjust = 0, vjust = 1, size = 5, color = "black") +
+  # A linha abaixo foi removida para tirar o título do gráfico
+  # annotate("text", x = mean(data_annual$year), y = 26,
+  #          label = paste0("(", station$label, ") Mean Annual Temperature - ", station$name),
+  #          size = 6, color = "black", fontface = "bold") +
+  annotate("segment", x = min(data_annual$year) + (max(data_annual$year) - min(data_annual$year)) * 0.7,
+           xend = min(data_annual$year) + (max(data_annual$year) - min(data_annual$year)) * 0.75,
+           y = 15.5, # Ajustado para o novo limite inferior
+           yend = 15.5,
+           color = "orange", linewidth = 1.5) +
+  annotate("text", x = min(data_annual$year) + (max(data_annual$year) - min(data_annual$year)) * 0.77,
+           y = 15.5, # Ajustado para o novo limite inferior
+           label = "Observed values",
+           hjust = 0, size = 5, color = "orange") +
+  annotate("segment", x = min(data_annual$year) + (max(data_annual$year) - min(data_annual$year)) * 0.7,
+           xend = min(data_annual$year) + (max(data_annual$year) - min(data_annual$year)) * 0.75,
+           y = 15.1, # Ajustado para o novo limite inferior
+           yend = 15.1,
+           color = "red", linewidth = 1.5, linetype = "dashed") +
+  annotate("text", x = min(data_annual$year) + (max(data_annual$year) - min(data_annual$year)) * 0.77,
+           y = 15.1, # Ajustado para o novo limite inferior
+           label = "Trend Line (Linear)",
+           hjust = 0, size = 5, color = "red")
+
+# Para salvar o gráfico, descomente a linha abaixo e ajuste o nome do arquivo
+ggsave(file.path(output_dir, "annual_temperature_trend.png"), plot, width = 10, height = 7, dpi = 300)
+
+print(plot) # Display the plot
