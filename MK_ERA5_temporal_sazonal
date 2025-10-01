@@ -1,0 +1,158 @@
+#This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, funded #by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the #research
+
+# MK sazonal para temperatura do ar (ERA5)
+
+
+library(tidyr)
+library(readr)
+library(trend)
+library(ggplot2)
+library(dplyr)
+library(patchwork) # Nova biblioteca para combinar gráficos
+
+# Definir o caminho do arquivo
+input_file <- "G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento/ERA5_manguezal_1979-2019_mensal.csv"
+output_dir <- "G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento"
+dir.create(output_dir, showWarnings = FALSE)
+
+# Carregar o dataset com separador de ponto e vírgula e garantindo a leitura correta de números decimais
+data_monthly <- read_csv2(input_file, locale = locale(decimal_mark = ","))
+
+# Exibir os primeiros registros do dataset para depuração
+message("Primeiros registros do dataset mensal:")
+print(head(data_monthly))
+
+# Padronizar os nomes das colunas
+colnames(data_monthly) <- tolower(trimws(colnames(data_monthly)))
+
+# Remover linhas com NA na coluna 'temperature'
+data_monthly <- data_monthly %>% drop_na(temperature)
+
+# Adicionar coluna de mês e estação
+data_monthly <- data_monthly %>%
+  mutate(
+    # Assumindo que a coluna 'month' já existe e é numérica (1-12)
+    # Se 'month' for uma string ou parte de uma data, ajuste a linha abaixo conforme necessário.
+    # Por exemplo, se for 'YYYY-MM', use: month = as.integer(format(as.Date(paste0(year, "-", month, "-01")), "%m"))
+    month = as.integer(month), # Convertendo para inteiro para garantir
+    season = case_when(
+      month %in% c(1, 2, 3) ~ "JFM", # Janeiro, Fevereiro, Março (Corrigido de 1,3,3 para 1,2,3)
+      month %in% c(4, 5, 6) ~ "AMJ", # Abril, Maio, Junho
+      month %in% c(7, 8, 9) ~ "JAS", # Julho, Agosto, Setembro
+      month %in% c(10, 11, 12) ~ "OND", # Outubro, Novembro, Dezembro
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  drop_na(season) # Remover linhas onde a estação não pôde ser determinada
+
+message("\nPrimeiros registros do dataset mensal com estação:")
+print(head(data_monthly))
+
+# Agrupar dados por ano e estação, calculando a média da temperatura
+data_seasonal <- data_monthly %>%
+  group_by(year, season) %>%
+  summarise(
+    temperature = mean(temperature, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+message("\nPrimeiros registros do dataset sazonal agregado:")
+print(head(data_seasonal))
+
+# Definir um placeholder para 'station' (se você tiver dados reais da estação, substitua aqui)
+station <- list(label = "Placeholder Label", name = "Placeholder Station Name")
+
+# Função para gerar o gráfico e estatísticas para uma dada estação
+generate_seasonal_plot <- function(data, current_season, plot_label) {
+  seasonal_data <- data %>% filter(season == current_season)
+  
+  # Verificar se há dados suficientes para a análise de tendência
+  if (nrow(seasonal_data) < 2) {
+    message(paste("Dados insuficientes para a estação", current_season, ". Pulando o gráfico."))
+    return(NULL) # Retorna NULL se não houver dados suficientes
+  }
+  
+  # Teste de Mann-Kendall e inclinação de Sen
+  mk_test <- mk.test(seasonal_data$temperature)
+  zmk <- mk_test$statistic
+  p_value <- mk_test$p.value
+  sen_slope_result <- sens.slope(seasonal_data$temperature)
+  sen_curvature <- round(sen_slope_result$estimates, 3)
+  
+  # Calcular a inclinação da regressão linear (LM Slope)
+  lm_model <- lm(temperature ~ year, data = seasonal_data)
+  slope_lm <- round(coef(lm_model)["year"], 3)
+  
+  # Definir limites e intervalos do eixo Y conforme solicitado
+  y_min_plot <- 10 # Alterado para começar em 10°C
+  y_max_plot <- 26
+  y_breaks_plot <- seq(y_min_plot, y_max_plot, by = 1) # Intervalos de 1°C
+  
+  # Título do plot alterado para apenas "A) JFM", "B) AMJ", etc.
+  plot_title <- paste0(plot_label, ") ", current_season)
+  
+  p <- ggplot(seasonal_data, aes(x = year, y = temperature)) +
+    geom_line(color = "orange", linewidth = 1) +
+    geom_point(color = "orange", size = 2) +
+    geom_smooth(method = "lm", aes(group = 1), color = "red", se = FALSE,
+                linetype = "dashed", linewidth = 1.5) +
+    labs(x = "Year", y = "Mean Annual Temperature (°C)", title = plot_title) +
+    theme_minimal(base_size = 14) + # Reduzir um pouco o base_size para caber 4 gráficos
+    scale_y_continuous(breaks = y_breaks_plot, limits = c(y_min_plot, y_max_plot)) +
+    scale_x_continuous(
+      breaks = seq(min(data_annual$year), max(data_annual$year), by = 2), # Ajustar breaks para x para melhor visualização em 4 gráficos
+      labels = as.character(seq(min(data_annual$year), max(data_annual$year), by = 2))
+    ) +
+    theme( axis.text.y = element_text(size = 16),
+          axis.text.x = element_text(angle = 270, hjust = 1, vjust = 0.5, size = 16),
+          plot.title = element_text(hjust = 0.5, size = 14, face = "bold")) + # Centralizar título do plot
+    # Anotações de estatísticas
+    annotate("text", x = min(seasonal_data$year), y = 16, # Alinhado com 16°C
+             label = paste("p-value:", sprintf("%.3f", p_value), "\n",
+                           "Sen's Slope:", sen_curvature, "°C/year", "\n",
+                           "LM Slope:", slope_lm, "°C/year", "\n",
+                           "ZMK:", round(zmk, 2)),
+             hjust = 0, vjust = 1, size = 4.5, color = "black") + # Reduzir tamanho da fonte
+    # Anotações de legenda (Observado e Tendência)
+    annotate("segment", x = 2004, # Alinhado com 2004
+             xend = 2006, # Fim do segmento
+             y = y_min_plot + 1.5, # Posição vertical da legenda "Observed values"
+             yend = y_min_plot + 1.5,
+             color = "orange", linewidth = 1.0) +
+    annotate("text", x = 2007, # Alinhado com o segmento, com espaçamento
+             y = y_min_plot + 1.5,
+             label = "Observed values",
+             hjust = 0, size = 4, color = "orange") +
+    annotate("segment", x = 2004, # Alinhado com 2004
+             xend = 2006, # Fim do segmento
+             y = y_min_plot + 0.5, # Posição vertical da legenda "Trend Line" (maior espaçamento vertical)
+             yend = y_min_plot + 0.5,
+             color = "red", linewidth = 1.0, linetype = "dashed") +
+    annotate("text", x = 2007, # Alinhado com o segmento, com espaçamento
+             y = y_min_plot + 0.5,
+             label = "Trend Line (Linear)",
+             hjust = 0, size = 4, color = "red")
+  
+  return(p)
+}
+
+# Gerar os gráficos para cada estação
+plot_jfm <- generate_seasonal_plot(data_seasonal, "JFM", "A")
+plot_amj <- generate_seasonal_plot(data_seasonal, "AMJ", "B")
+plot_jas <- generate_seasonal_plot(data_seasonal, "JAS", "C")
+plot_ond <- generate_seasonal_plot(data_seasonal, "OND", "D")
+
+# Combinar os gráficos usando patchwork, filtrando por plots que não são NULL
+combined_plot <- (plot_jfm + plot_amj) / (plot_jas + plot_ond)
+
+# Remover o título geral do conjunto de gráficos
+# combined_plot <- combined_plot +
+#   plot_annotation(
+#     title = paste0("Mean Annual Temperature Trends by Season - (", station$label, ") ", station$name),
+#     theme = theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+#   )
+
+# Para salvar o gráfico combinado, descomente a linha abaixo
+ggsave(file.path(output_dir, "seasonal_temperature_trends.png"), combined_plot, width = 12, height = 10, dpi = 300)
+
+print(combined_plot)
