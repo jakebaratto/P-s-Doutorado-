@@ -1,0 +1,152 @@
+#This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, funded #by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the #research
+
+# MK mensal para temperatura do ar (ERA5)
+
+
+library(tidyr)
+library(readr)
+library(trend)
+library(ggplot2)
+library(dplyr)
+library(patchwork) # Nova biblioteca para combinar gráficos
+
+# Definir o caminho do arquivo
+input_file <- "G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento/ERA5_manguezal_1979-2019_mensal.csv"
+output_dir <- "G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento"
+dir.create(output_dir, showWarnings = FALSE)
+
+# Carregar o dataset com separador de ponto e vírgula e garantindo a leitura correta de números decimais
+data_monthly <- read_csv2(input_file, locale = locale(decimal_mark = ","))
+
+# Exibir os primeiros registros do dataset para depuração
+message("Primeiros registros do dataset mensal:")
+print(head(data_monthly))
+
+# Padronizar os nomes das colunas
+colnames(data_monthly) <- tolower(trimws(colnames(data_monthly)))
+
+# Remover linhas com NA na coluna 'temperature'
+data_monthly <- data_monthly %>% drop_na(temperature)
+
+# Garantir que a coluna 'month' é numérica
+data_monthly <- data_monthly %>%
+  mutate(month = as.integer(month))
+
+message("\nPrimeiros registros do dataset mensal com coluna 'month' numérica:")
+print(head(data_monthly))
+
+# Definir um placeholder para 'station' (se você tiver dados reais da estação, substitua aqui)
+station <- list(label = "Placeholder Label", name = "Placeholder Station Name")
+
+# Mapeamento de números de mês para nomes de mês
+month_names <- c(
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+)
+
+# Função para gerar o gráfico e estatísticas para um dado mês
+generate_monthly_plot <- function(data, current_month_num, plot_label) {
+  monthly_data <- data %>% filter(month == current_month_num)
+  
+  # Verificar se há dados suficientes para a análise de tendência
+  if (nrow(monthly_data) < 2) {
+    message(paste("Dados insuficientes para o mês", month_names[current_month_num], ". Pulando o gráfico."))
+    return(NULL) # Retorna NULL se não houver dados suficientes
+  }
+  
+  # Teste de Mann-Kendall e inclinação de Sen
+  mk_test <- mk.test(monthly_data$temperature)
+  zmk <- mk_test$statistic
+  p_value <- mk_test$p.value
+  sen_slope_result <- sens.slope(monthly_data$temperature)
+  sen_curvature <- round(sen_slope_result$estimates, 3)
+  
+  # Calcular a inclinação da regressão linear (LM Slope)
+  lm_model <- lm(temperature ~ year, data = monthly_data)
+  slope_lm <- round(coef(lm_model)["year"], 3)
+  
+  # Definir limites e intervalos do eixo Y conforme solicitado
+  y_min_plot <- 10
+  y_max_plot <- 26
+  y_breaks_plot <- seq(y_min_plot, y_max_plot, by = 1.5) # Intervalos de 1.5°C
+  
+  # Título do plot: "A) January", "B) February", etc.
+  plot_title <- paste0(plot_label, ") ", month_names[current_month_num])
+  
+  p <- ggplot(monthly_data, aes(x = year, y = temperature)) +
+    geom_line(color = "orange", linewidth = 1) +
+    geom_point(color = "orange", size = 2) +
+    geom_smooth(method = "lm", aes(group = 1), color = "red", se = FALSE,
+                linetype = "dashed", linewidth = 1.5) +
+    labs(x = "Year", y = "Mean Monthly Temperature (°C)", title = plot_title) + # Título do plot reativado
+    theme_minimal(base_size = 11) + # Aumentado base_size para melhor legibilidade com mais largura
+    scale_y_continuous(breaks = y_breaks_plot, limits = c(y_min_plot, y_max_plot)) +
+    scale_x_continuous(
+      breaks = seq(min(data_monthly$year), max(data_monthly$year), by = 3), # Ajustar breaks para x para melhor visualização
+      labels = as.character(seq(min(data_monthly$year), max(data_monthly$year), by = 3))
+    ) +
+    theme(axis.text.x = element_text(angle = 270, hjust = 1, vjust = 0.5, size = 16), # Aumentado tamanho da fonte dos valores do eixo X
+          axis.text.y = element_text(size = 16), # Aumentado tamanho da fonte dos valores do eixo Y
+          plot.title = element_text(hjust = 0.5, size = 16, face = "bold"), # Centralizar título do plot
+          axis.title.x = element_blank(), # Remover título do eixo X para economizar espaço
+          axis.title.y = element_blank()) + # Remover título do eixo Y para economizar espaço
+    # Anotações de estatísticas
+    annotate("text", x = min(monthly_data$year), y = 16, # Alinhado com 16°C
+             label = paste("p-value:", sprintf("%.3f", p_value), "\n",
+                           "Sen's Slope:", sen_curvature, "°C/year", "\n",
+                           "LM Slope:", slope_lm, "°C/year", "\n",
+                           "ZMK:", round(zmk, 2)),
+             hjust = 0, vjust = 1, size =5, color = "black") + # Aumentado tamanho da fonte
+    # Anotações de legenda (Observado e Tendência)
+    annotate("segment", x = 2004, # Alinhado com 2004
+             xend = 2006, # Fim do segmento
+             y = y_min_plot + 1.5, # Posição vertical da legenda "Observed values"
+             yend = y_min_plot + 1.5,
+             color = "orange", linewidth = 0.8) +
+    annotate("text", x = 2007, # Alinhado com o segmento, com espaçamento
+             y = y_min_plot + 1.5,
+             label = "Observed values",
+             hjust = 0, size = 4.5, color = "orange") + # Aumentado tamanho da fonte
+    annotate("segment", x = 2004, # Alinhado com 2004
+             xend = 2006, # Fim do segmento
+             y = y_min_plot + 0.5, # Posição vertical da legenda "Trend Line" (maior espaçamento vertical)
+             yend = y_min_plot + 0.5,
+             color = "red", linewidth = 0.8, linetype = "dashed") +
+    annotate("text", x = 2007, # Alinhado com o segmento, com espaçamento
+             y = y_min_plot + 0.5,
+             label = "Trend Line (Linear)",
+             hjust = 0, size = 4.5, color = "red") # Aumentado tamanho da fonte
+  
+  return(p)
+}
+
+# Gerar os gráficos para cada mês
+plots_list <- list()
+plot_labels <- LETTERS[1:12] # A, B, C, ... L
+
+for (i in 1:12) {
+  plots_list[[i]] <- generate_monthly_plot(data_monthly, i, plot_labels[i])
+}
+
+# Filtrar plots NULL (meses sem dados suficientes)
+plots_list <- plots_list[!sapply(plots_list, is.null)]
+
+# Combinar todos os gráficos em um único painel (4 colunas x 3 linhas)
+combined_plot_all_months <- (plots_list[[1]] | plots_list[[2]] | plots_list[[3]] | plots_list[[4]]) /
+  (plots_list[[5]] | plots_list[[6]] | plots_list[[7]] | plots_list[[8]]) /
+  (plots_list[[9]] | plots_list[[10]] | plots_list[[11]] | plots_list[[12]])
+
+# Adicionar títulos de eixo comuns para o painel completo
+combined_plot_all_months <- combined_plot_all_months +
+  plot_annotation(theme = theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold")) # Aumentado tamanho do título principal
+  ) &
+  xlab("Year") & ylab("Mean Monthly Temperature (°C)") &
+  theme(axis.title.x = element_text(size = 16, margin = margin(t = 15)), # Aumentado tamanho do título do eixo X
+        axis.title.y = element_text(size = 16, margin = margin(r = 15), angle = 90)) # Aumentado tamanho do título do eixo Y
+
+
+# Para salvar o gráfico combinado, descomente a linha abaixo
+ggsave(file.path(output_dir, "monthly_temperature_trends_all_months.png"), combined_plot_all_months, width = 24, height = 18, dpi = 300) # Largura e altura ajustadas
+
+# Imprimir o gráfico (opcional, dependendo do ambiente)
+print(combined_plot_all_months)
