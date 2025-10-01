@@ -1,0 +1,173 @@
+#This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, funded #by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the #research
+
+# Correlação mensal e sazonal entre os IVs e a temperatura do ar (ERA5)
+
+
+
+## Para instalar pacotes necessários
+if(!require(pacman)) install.packages("pacman")
+
+# Carregar pacotes com o pacman
+library(pacman)
+pacman::p_load(hydroGOF, terra, dplyr, cowplot, ggplot2, ggpubr, grDevices)
+
+### Para mais informações sobre o Rstudio 
+## <https://www.youtube.com/watch?v=WVogdSlk7gY&list=PLOw62cBQ5j9VE9X4cCCfFMjW_hhEAJUhU>
+
+# Definir o diretório de trabalho
+setwd("G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento/BD-Rstudio")
+
+# Carregar o dataset
+dados <- read.csv2(file.choose())
+
+# Verificar a estrutura dos dados carregados
+str(dados)
+head(dados)
+
+# Definir os meses do ano
+meses <- 1:12
+nomes_meses <- c("Jan", "Fev", "Mar", "Abr", "Mai", "Jun", 
+                 "Jul", "Ago", "Set", "Out", "Nov", "Dez")
+
+# Inicializar uma lista para armazenar os resultados
+resultados_mensais <- list()
+
+# Loop para calcular correlação, regressão e p-valor para cada mês
+for (i in seq_along(meses)) {
+  
+  # Filtrar os dados para o mês atual
+  dados_mes <- dados %>% filter(mes == meses[i])
+  
+  # Variáveis de interesse
+  X <- dados_mes$Tar
+  Y_EVI <- dados_mes$EVI
+  Y_NDVI <- dados_mes$NDVI
+  Y_LAI <- dados_mes$LAI
+  
+  # Calcular correlação (tratando possíveis NAs)
+  correlacao_EVI <- cor(X, Y_EVI, method = "pearson", use = "complete.obs")
+  correlacao_NDVI <- cor(X, Y_NDVI, method = "pearson", use = "complete.obs")
+  correlacao_LAI <- cor(X, Y_LAI, method = "pearson", use = "complete.obs")
+  
+  # Modelos de regressão linear
+  reg_EVI <- lm(Y_EVI ~ X, na.action = na.exclude)
+  reg_NDVI <- lm(Y_NDVI ~ X, na.action = na.exclude)
+  reg_LAI <- lm(Y_LAI ~ X, na.action = na.exclude)
+  
+  # Resumo dos modelos para extrair informações
+  resumo_reg_EVI <- summary(reg_EVI)
+  resumo_reg_NDVI <- summary(reg_NDVI)
+  resumo_reg_LAI <- summary(reg_LAI)
+  
+  
+  # Coeficiente de determinação (R²)
+  R2_EVI <- resumo_reg_EVI$r.squared
+  R2_NDVI <- resumo_reg_NDVI$r.squared
+  R2_LAI <- resumo_reg_LAI$r.squared
+  
+  # P-valores dos coeficientes das variáveis X (Tar)
+  p_valor_EVI <- resumo_reg_EVI$coefficients[2, 4]
+  p_valor_NDVI <- resumo_reg_NDVI$coefficients[2, 4]
+  p_valor_LAI <- resumo_reg_LAI$coefficients[2, 4]
+  
+  # Organizar os resultados em uma tabela para o mês atual
+  resultados_mes <- data.frame(
+    Mes = nomes_meses[i],
+    Indicador = c("EVI", "NDVI","LAI"),
+    Correlacao = c(correlacao_EVI, correlacao_NDVI, correlacao_LAI),
+    R2 = c(R2_EVI, R2_NDVI,R2_LAI),
+    P_Valor = c(p_valor_EVI, p_valor_NDVI,p_valor_LAI)
+  )
+  
+  # Adicionar os resultados do mês atual à lista de resultados
+  resultados_mensais[[i]] <- resultados_mes
+}
+
+# Combinar os resultados de todos os meses em um único dataframe
+resultados_finais <- do.call(rbind, resultados_mensais)
+
+# Exibir a tabela de resultados finais
+print(resultados_finais)
+
+# Salvar os resultados em um arquivo CSV (opcional)
+write.csv(resultados_finais, "resultados_correlacao_regressao_mensal.csv", row.names = FALSE)
+
+
+## Para instalar pacotes necessários
+if(!require(pacman)) install.packages("pacman")
+
+# Carregar pacotes com o pacman
+library(pacman)
+pacman::p_load(hydroGOF, terra, dplyr, cowplot, ggplot2, ggpubr, grDevices)
+
+
+# Definir os trimestres e seus respectivos meses
+trimestres <- list(
+  "JFM" = c(1, 2, 3),   # Janeiro, Fevereiro, Março
+  "AMJ" = c(4, 5, 6),   # Abril, Maio, Junho
+  "JAS" = c(7, 8, 9),   # Julho, Agosto, Setembro
+  "OND" = c(10, 11, 12) # Outubro, Novembro, Dezembro
+)
+
+# Inicializar uma lista para armazenar os resultados trimestrais
+resultados_trimestrais <- list()
+
+# Loop para calcular correlação, regressão e p-valor para cada trimestre
+for (trimestre in names(trimestres)) {
+  
+  # Filtrar os dados para o trimestre atual
+  dados_trimestre <- dados %>% filter(mes %in% trimestres[[trimestre]])
+  
+  # Variáveis de interesse
+  X <- dados_trimestre$Tar
+  Y_EVI <- dados_trimestre$EVI
+  Y_NDVI <- dados_trimestre$NDVI
+  Y_LAI <- dados_trimestre$LAI
+  
+  # Calcular correlação (tratando possíveis NAs)
+  correlacao_EVI <- cor(X, Y_EVI, method = "pearson", use = "complete.obs")
+  correlacao_NDVI <- cor(X, Y_NDVI, method = "pearson", use = "complete.obs")
+  correlacao_LAI <- cor(X, Y_LAI, method = "pearson", use = "complete.obs")
+  
+  # Modelos de regressão linear
+  reg_EVI <- lm(Y_EVI ~ X, na.action = na.exclude)
+  reg_NDVI <- lm(Y_NDVI ~ X, na.action = na.exclude)
+  reg_LAI <- lm(Y_LAI ~ X, na.action = na.exclude)
+  
+  # Resumo dos modelos para extrair informações
+  resumo_reg_EVI <- summary(reg_EVI)
+  resumo_reg_NDVI <- summary(reg_NDVI)
+  resumo_reg_LAI <- summary(reg_LAI)
+  
+  # Coeficiente de determinação (R²)
+  R2_EVI <- resumo_reg_EVI$r.squared
+  R2_NDVI <- resumo_reg_NDVI$r.squared
+  R2_LAI <- resumo_reg_LAI$r.squared
+  
+  # P-valores dos coeficientes das variáveis X (Tar)
+  p_valor_EVI <- resumo_reg_EVI$coefficients[2, 4]
+  p_valor_NDVI <- resumo_reg_NDVI$coefficients[2, 4]
+  p_valor_LAI <- resumo_reg_LAI$coefficients[2, 4]
+  
+  # Organizar os resultados em uma tabela para o trimestre atual
+  resultados_trimestre <- data.frame(
+    Trimestre = trimestre,
+    Indicador = c("EVI", "NDVI","LAI"),
+    Correlacao = c(correlacao_EVI, correlacao_NDVI,correlacao_LAI),
+    R2 = c(R2_EVI, R2_NDVI, R2_LAI),
+    P_Valor = c(p_valor_EVI, p_valor_NDVI,p_valor_LAI)
+  )
+  
+  # Adicionar os resultados do trimestre atual à lista de resultados
+  resultados_trimestrais[[trimestre]] <- resultados_trimestre
+}
+
+# Combinar os resultados de todos os trimestres em um único dataframe
+resultados_finais <- do.call(rbind, resultados_trimestrais)
+
+# Exibir a tabela de resultados finais
+print(resultados_finais)
+
+# Salvar os resultados em um arquivo CSV (opcional)
+write.csv(resultados_finais, "resultados_correlacao_regressao_trimestral.csv", row.names = FALSE)
+
