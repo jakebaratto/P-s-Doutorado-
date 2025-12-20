@@ -7,102 +7,196 @@
 
 if(!require(pacman)) install.packages("pacman")
 library(pacman)
+pacman::p_load(randomForest, caret, MASS, dplyr, ggplot2, gridExtra, scales, cowplot, ggpubr, stringr)
 
-pacman::p_load(randomForest,caret,MASS)
+rm(list = ls()) 
 
-setwd("G:/My Drive/PD - USP/04_Artigos/Artigo - Estimativa tar/BD-novo")
-dados <- read.csv2(file.choose())
+# --- 1. CONFIGURAÇÃO ---
+cat("\n>>> SELECIONE O ARQUIVO 'BD_2.csv' <<<\n")
+file_path <- file.choose()
+raw_data <- read.csv2(file_path, header = TRUE) 
 
+base_dir <- dirname(file_path)
+setwd(base_dir)
+folder_name <- "Results_RF_VisualArtigo"
+if (!dir.exists(folder_name)) dir.create(folder_name)
 
-#### Regressão ####
-
-# Verificar se tem algum NA
-any(is.na(dados))
-
-# Dividindo em treino e teste
-set.seed(123)
-intrain <- createDataPartition(y = dados$Tar, p = 0.7, list = FALSE)
-train <- dados[intrain,]
-test <- dados[-intrain,]
-
-### Ajuste dos Parâmetros ###
-
-set.seed(123)
-
-ctrl <- trainControl(method = "repeatedcv",
-                     number = 10,
-                     repeats = 3)
-
-# Neste caso o ajuste será feito apenas em relação ao mtry
-rfFit <- train(Tar ~ .,
-               method     = "rf",
-               tuneLength = 6,
-               trControl  = ctrl,
-               metric     = "RMSE",
-               data       = train)
-rfFit
-plot(rfFit)
-
-### Importância das Variáveis ###
-
-rf <- randomForest(Tar ~ ., data = train, importance = T, mtry = 3)
-
-# MeanDecreaseAccuracy: permutação
-importance(rf, type = 1)
-
-# MeanDecreaseGini: diminuição total nas impurezas do nó da divisão na variável, calculada em média para todas as árvores
-importance(rf, type = 2)
-
-# Gráfico da importância das variáveis
-varImpPlot(rf, sort = T)
-
-# Quantas vezes cada variável explicativa foi utilizada na construção das árvores
-varUsed(rf, count = T)
-
-# Predição
-
-par(mfrow=c(1,1))
-# Previsão das classes
-dtPredict <- predict(rf, newdata = test[,-7])
-
-# Previsão com probabilidades (aplicável para classificação)
-dtProbabilities <- predict(rf, newdata = test[,-7])
-
-# Calculando o erro 
-cbind(dtPredict, test$Tar) # juntando as colunas com o valor real e o predito
-plot(dtPredict, test$Tar) # gráfico de dispersão
-RMSE(dtPredict, test$Tar) # erro quadrático médio
-MAE(dtPredict, test$Tar) # erro absoluto médio
-
-results <- cbind(Real = test$Tar, Predicted = dtPredict)
+cat(paste("Salvando resultados em:", folder_name, "\n"))
 
 
-# Gráfico de dispersão
-plot(dtPredict, test$Tar, main = "Predicted vs Real", xlab = "Predicted", ylab = "Real")
-abline(0, 1, col = "red")
+# --- 2. LIMPEZA ---
+clean_data <- function(df) {
+  colnames(df)[grep("mes", colnames(df), ignore.case = TRUE)]  <- "Mes"
+  colnames(df)[grep("lat", colnames(df), ignore.case = TRUE)]  <- "Latitude"
+  colnames(df)[grep("long", colnames(df), ignore.case = TRUE)] <- "Longitude"
+  colnames(df)[grep("alti", colnames(df), ignore.case = TRUE)] <- "Altitude"
+  
+  # Padronização do ID
+  if(any(grepl("^id$", colnames(df), ignore.case = TRUE))) {
+    colnames(df)[grep("^id$", colnames(df), ignore.case = TRUE)] <- "ID"
+  } else {
+    cat("Aviso: Coluna 'ID' não encontrada. Criando ID baseado em Lat/Long.\n")
+    df <- df %>% 
+      group_by(Latitude, Longitude) %>%
+      mutate(ID = paste0("Ponto_", cur_group_id())) %>%
+      ungroup()
+  }
+  
+  num_cols <- c("NDVI", "EVI", "Latitude", "Longitude", "Altitude", "Tar", "MDLST_terra", "MDLST_aqua")
+  for(col in num_cols) {
+    if(col %in% colnames(df)) {
+      df[[col]] <- as.numeric(gsub(",", ".", as.character(df[[col]])))
+    }
+  }
+  
+  if("Mes" %in% colnames(df)) {
+    df$Mes <- factor(as.numeric(df$Mes), levels = 1:12)
+  }
+  
+  return(df)
+}
 
-# Exportar os dados preditos para um arquivo CSV
-write.csv(results, "resultados_random_forest_aqua.csv", row.names = FALSE)
+data <- clean_data(raw_data)
 
-# Predição em todo o banco de dados
-dtPredictAll <- predict(rf, newdata = dados)
 
-# Calculando o erro no conjunto de teste (para validação)
-dtPredictTest <- predict(rf, newdata = test[,-7])
+# --- 3. FUNÇÃO MESTRE RANDOM FOREST ---
+run_rf_full <- function(df, sat_name, lst_col) {
+  
+  cat(paste0("\n>>> PROCESSING RF: ", sat_name, " <<<\n"))
+  
+  # A. SELEÇÃO
+  use_cols <- c("ID", "Tar", "EVI", "Mes", lst_col, "Latitude", "Longitude", "Altitude")
+  use_cols <- use_cols[use_cols %in% colnames(df)]
+  
+  df_mod <- na.omit(df[, use_cols])
+  df_mod$Mes <- droplevels(df_mod$Mes)
+  
+  if(nrow(df_mod) == 0) return(NULL)
+  
+  # B. MODELAGEM
+  set.seed(123)
+  inTrain <- createDataPartition(y = df_mod$Tar, p = 0.7, list = FALSE)
+  train_set_full <- df_mod[inTrain, ] 
+  
+  # Remove ID para treino
+  cols_to_train <- setdiff(colnames(train_set_full), "ID")
+  train_set_model <- train_set_full[, cols_to_train]
+  
+  # Tuning Simples
+  rf_final <- randomForest(Tar ~ ., data = train_set_model, ntree = 500, importance = TRUE)
+  
+  # C. IMPORTÂNCIA
+  imp <- importance(rf_final)
+  imp_df <- data.frame(Variable = row.names(imp), IncMSE = imp[,"%IncMSE"])
+  
+  imp_df$Variable <- dplyr::recode(imp_df$Variable,
+                                   "Mes" = "Month",
+                                   "MDLST_terra" = "MDLST (Terra)",
+                                   "MDLST_aqua" = "MDLST (Aqua)",
+                                   "alti" = "Elevation",
+                                   "Altitude" = "Elevation",
+                                   "lat" = "Latitude",
+                                   "Latitude" = "Latitude",
+                                   "long" = "Longitude",
+                                   "Longitude" = "Longitude")
+  
+  p_imp <- ggplot(imp_df, aes(x = IncMSE, y = reorder(Variable, IncMSE))) +
+    geom_segment(aes(yend = Variable), xend = 0, color = "grey50") + 
+    geom_point(size = 4, color = "black") + 
+    labs(title = sat_name, x = "% Increase in MSE", y = "") +
+    theme_bw(base_size = 16)
+  
+  # D. PREDIÇÃO E CÁLCULO DE MÉTRICAS
+  df_mod$Predicted_RF <- predict(rf_final, newdata = df_mod)
+  
+  obs <- df_mod$Tar
+  pred <- df_mod$Predicted_RF
+  
+  lin_mod <- lm(pred ~ obs)
+  intercept <- coef(lin_mod)[1]; slope <- coef(lin_mod)[2]
+  sign_int <- if(intercept >= 0) "+" else "-"
+  
+  r2 <- cor(obs, pred)^2
+  rmse <- sqrt(mean((pred - obs)^2))
+  mae <- mean(abs(pred - obs))
+  bias <- mean(pred - obs)
+  
+  stats_text <- paste0(
+    "y = ", sprintf("%.2f", slope), "x ", sign_int, " ", sprintf("%.2f", abs(intercept)), "\n",
+    "R² = ", sprintf("%.2f", r2), "\n",
+    "RMSE = ", sprintf("%.2f", rmse), " °C\n",
+    "MAE = ", sprintf("%.2f", mae), " °C\n",
+    "Bias = ", sprintf("%.2f", bias), " °C"
+  )
+  
+  user_palette <- c(
+    "1"  = "#800000", "2"  = "#FF0000", "3"  = "#FA8072",
+    "4"  = "#8B4513", "5"  = "#bc7f17", "6"  = "#DEB887",
+    "7"  = "#f7e501", "8"  = "#FFFF00", "9"  = "#fede7d",
+    "10" = "#D2691E", "11" = "#FF8C00", "12" = "#FF4500"
+  )
+  
+  limits_range <- range(c(obs, pred))
+  
+  # E. GRÁFICO IDÊNTICO À REGRESSÃO
+  p_pred <- ggplot(df_mod, aes(x = Tar, y = Predicted_RF)) +
+    geom_point(aes(color = Mes), size = 2.5, alpha = 0.8) +
+    geom_smooth(method = "lm", color = "blue", size = 0.8, se = FALSE) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black", size = 0.8) +
+    annotate("text", x = limits_range[1], y = limits_range[2], label = stats_text, 
+             hjust = 0, vjust = 1, size = 6, fontface = "bold") +
+    scale_color_manual(values = user_palette, name = "Month", drop = TRUE) +
+    labs(title = sat_name, 
+         x = "Observed Temperature (°C)", 
+         y = "Predicted Temperature (°C)") +
+    theme_bw(base_size = 16) +
+    theme(legend.position = "right")
+  
+  write.csv(df_mod, paste0(folder_name, "/Dados_Preditos_RF_", sat_name, ".csv"), row.names = FALSE)
+  
+  return(list(plot_imp = p_imp, plot_pred = p_pred))
+}
 
-mae <- MAE(dtPredictTest, test$Tar)  # erro absoluto médio
-rmse <- RMSE(dtPredictTest, test$Tar)  # erro quadrático médio
+# --- 4. EXECUÇÃO ---
+res_terra <- run_rf_full(data, "MODIS Terra", "MDLST_terra")
+res_aqua  <- NULL
+if("MDLST_aqua" %in% colnames(data)) {
+  res_aqua <- run_rf_full(data, "MODIS Aqua", "MDLST_aqua")
+}
 
-# Juntando as colunas com o valor real e o predito para todo o conjunto de dados
-resultsAll <- cbind(Real = dados$Tar, Predicted = dtPredictAll)
 
-# Convertendo para data frame
-resultsAll <- as.data.frame(resultsAll)
+# --- 5. PAINÉIS FINAIS ---
+cat("\n>>> GERANDO PAINÉIS FINAIS <<<\n")
 
-# Adicionando os erros calculados no conjunto de teste à tabela de resultados
-resultsAll$MAE_Test <- mae
-resultsAll$RMSE_Test <- rmse
+if(!is.null(res_terra) & !is.null(res_aqua)) {
+  
+  # A. IMPORTÂNCIA
+  panel_imp <- plot_grid(res_terra$plot_imp, res_aqua$plot_imp, labels="AUTO", ncol=2)
+  ggsave(paste0(folder_name, "/01_Painel_Importancia_RF.png"), panel_imp, width=14, height=6)
+  
+  # B. PREDIÇÃO (COM CORREÇÃO DE MARGEM)
+  
+  # Usamos ggplot2::margin explicitamente aqui
+  legend_plot <- res_terra$plot_pred + 
+    theme(legend.position = "right",
+          legend.box.margin = ggplot2::margin(0,0,0,0),
+          legend.margin = ggplot2::margin(l = -15)) 
+  
+  legend_side <- get_legend(legend_plot)
+  
+  p1 <- res_terra$plot_pred + theme(legend.position = "none")
+  p2 <- res_aqua$plot_pred + theme(legend.position = "none")
+  
+  grid_plots <- plot_grid(p1, p2, labels="AUTO", ncol=2, align = 'h')
+  
+  final_panel <- plot_grid(grid_plots, legend_side, ncol=2, rel_widths = c(1, 0.12))
+  
+  ggsave(paste0(folder_name, "/02_Painel_Predicao_RF.png"), final_panel, width=16, height=7)
+  
+} else {
+  ggsave(paste0(folder_name, "/02_Predicao_Terra_RF.png"), res_terra$plot_pred, width=9, height=7)
+}
 
-# Exportar os dados preditos para um arquivo CSV
-write.csv(resultsAll, "resultados_random_forest_all_data_aqua_novo.csv", row.names = FALSE)
-
+cat("\n==========================================================\n")
+cat("SUCESSO! Script Random Forest Corrigido.\n")
+cat("==========================================================\n")
