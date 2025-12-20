@@ -1,4 +1,16 @@
-
+# ==============================================================================
+# PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+#          DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+# ==============================================================================
+# DESCRIÇÃO:
+# Script desenvolvido para validar as estimativa da temperatura do ar em
+#
+# CONTEXTO ACADÊMICO:
+# Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+#
+# AUTORIA E FINANCIAMENTO:
+# Pesquisadora Responsável: Dra. Jakeline Baratto
+# Financiamento: FAPESP (Processo: 2022/02383-3)
 
 
 if(!require(pacman)) install.packages("pacman")
