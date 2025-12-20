@@ -1,0 +1,181 @@
+#This supplementary material details the data and analysis scripts used in the Post-Doctorate project of Dr. Jakeline Baratto, 
+#funded by FAPESP (process: 2022/02383-3). The scripts are organized into three main sections, each dedicated to a specific stage of the research
+
+# MONTHLY VALIDATION #
+
+if(!require(pacman)) install.packages("pacman")
+library(pacman)
+pacman::p_load(dplyr, cowplot, ggplot2, hydroGOF, reshape2, gridExtra, stringr)
+
+rm(list = ls()) 
+
+# --- 1. SETUP & DATA LOADING ---
+cat("\n>>> SELECT FILE 'Dados_estiamados.csv' <<<\n")
+file_path <- file.choose()
+
+# Output folder
+base_dir <- dirname(file_path)
+setwd(base_dir)
+folder_res <- "Results_Monthly_Analysis_Final"
+if (!dir.exists(folder_res)) dir.create(folder_res)
+
+# Read Data (Robust reading)
+raw_data <- read.csv(file_path, sep = ";", header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+
+# --- ROBUST CLEANING ---
+names(raw_data) <- iconv(names(raw_data), to = "ASCII//TRANSLIT")
+names(raw_data) <- gsub("[^[:alnum:]_]", "", names(raw_data))
+names(raw_data) <- tolower(names(raw_data))
+
+col_id_name <- names(raw_data)[grep("id", names(raw_data))][1]
+col_mes_name <- names(raw_data)[grep("mes|month", names(raw_data))][1]
+col_ta_name  <- names(raw_data)[grep("ta|tar|observed", names(raw_data))][1]
+
+if(!is.na(col_id_name))  names(raw_data)[names(raw_data) == col_id_name]  <- "ID"
+if(!is.na(col_mes_name)) names(raw_data)[names(raw_data) == col_mes_name] <- "Month"
+if(!is.na(col_ta_name))  names(raw_data)[names(raw_data) == col_ta_name]  <- "Ta"
+
+data <- raw_data
+
+if(!"Month" %in% names(data)) stop("CRITICAL ERROR: Could not find 'Month/Mes' column.")
+if(!"Ta" %in% names(data)) stop("CRITICAL ERROR: Could not find 'Ta/Tar' column.")
+
+# Numerical Cleaning
+clean_num <- function(x) {
+  as.numeric(gsub(",", ".", gsub(" ", "", gsub('"', '', as.character(x)))))
+}
+
+# Identify Models
+model_cols_orig <- grep("rf|mr|aqua|terra", names(data), value = TRUE)
+model_cols <- setdiff(model_cols_orig, c("ID", "Month", "Ta"))
+
+cat("\nIdentified Models:", paste(model_cols, collapse=", "), "\n")
+
+for(col in c("Ta", model_cols)) {
+  data[[col]] <- clean_num(data[[col]])
+}
+
+# --- CREATE MONTH LABELS (A to L) ---
+month_labels <- c(
+  "(A) Jan", "(B) Feb", "(C) Mar", "(D) Apr", 
+  "(E) May", "(F) Jun", "(G) Jul", "(H) Aug", 
+  "(I) Sep", "(J) Oct", "(K) Nov", "(L) Dec"
+)
+
+data <- data %>%
+  mutate(Month = as.numeric(Month)) %>%
+  filter(!is.na(Month) & Month >= 1 & Month <= 12) %>%
+  mutate(Month_Label = factor(Month, levels = 1:12, labels = month_labels))
+
+
+# --- 2. CALCULATE METRICS (ROBUST) ---
+cat("\n>>> Calculating metrics per Month... <<<\n")
+
+results_list <- list()
+ids_unique <- unique(data$ID)
+months <- levels(data$Month_Label)
+
+for(model in model_cols) {
+  for(id in ids_unique) {
+    for(m in months) {
+      
+      df_sub <- data %>% filter(ID == id, Month_Label == m) %>% na.omit()
+      
+      if(nrow(df_sub) < 1) next 
+      
+      obs <- df_sub$Ta
+      sim <- df_sub[[model]]
+      
+      if(nrow(df_sub) > 1 && sd(obs) > 0 && sd(sim) > 0) {
+        r_val <- cor(obs, sim)
+        r2_val <- r_val^2
+      } else {
+        r_val <- NA
+        r2_val <- NA
+      }
+      
+      results_list[[paste(model, id, m)]] <- data.frame(
+        Model = model, ID = id, Month_Label = m,
+        r = r_val,
+        R2 = r2_val,
+        MAE = hydroGOF::mae(sim, obs),
+        RMSE = hydroGOF::rmse(sim, obs),
+        d = hydroGOF::d(sim, obs),
+        Pbias = hydroGOF::pbias(sim, obs)
+      )
+    }
+  }
+}
+
+if(length(results_list) == 0) stop("ERROR: No metrics calculated. Check your data.")
+final_results <- bind_rows(results_list)
+
+# --- RENAMING MODELS FOR LEGEND ---
+# Aqui ajustamos os nomes conforme solicitado: MR -> MLR, RF -> RF
+cat("Renaming models for Legend...\n")
+
+final_results$Model <- final_results$Model %>%
+  gsub("mr_", "MLR_", ., ignore.case = TRUE) %>%
+  gsub("rf_", "RF_", ., ignore.case = TRUE)
+
+# Garante que aqua e terra estejam minúsculos na segunda parte, se necessário, ou mantem como está
+# Se quiser forçar MLR_aqua, RF_terra especificamente:
+# (O gsub acima já deve resolver se a entrada for mr_aqua -> MLR_aqua)
+
+write.csv(final_results, paste0(folder_res, "/Monthly_Metrics_Table.csv"), row.names = FALSE)
+
+
+# --- 3. PLOTTING (BIG LEGEND) ---
+cat("\n>>> Generating Monthly plots... <<<\n")
+
+my_palette <- c("#f63e02", "#ff6201", "#1E88E5", "#004D40", "#D81B60", "#FFC107", "#5D4037", "#7B1FA2")
+
+plot_facet_metric <- function(df, metric_col, y_label, file_name) {
+  
+  df_plot <- df[!is.na(df[[metric_col]]), ]
+  
+  p <- ggplot(df_plot, aes_string(x = "ID", y = metric_col)) +
+    geom_point(aes(shape = Model, color = Model), size = 5, alpha = 0.9) +
+    
+    facet_wrap(~Month_Label, ncol = 3, scales = "fixed") + 
+    
+    labs(y = y_label, x = "Sample Points (ID)", color = "", shape = "") +
+    
+    theme_minimal() + 
+    theme(
+      legend.position = "bottom",
+      
+      # --- AJUSTE DA LEGENDA (MAIOR) ---
+      legend.text = element_text(size = 18, color="black"), # Fonte aumentada para 18
+      legend.key.size = unit(2.5, "lines"),                 # Símbolo bem grande
+      legend.spacing.x = unit(0.5, 'cm'),
+      # ---------------------------------
+      
+      axis.text = element_text(size = 12, color="black"),
+      axis.title = element_text(size = 16, face="bold"),
+      
+      strip.text = element_text(size = 14, face="bold", hjust = 0), 
+      
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill=NA, size=0.5)
+    ) +
+    scale_color_manual(values = rep(my_palette, length.out = length(unique(df$Model))))
+  
+  if(metric_col == "Pbias") {
+    p <- p + geom_hline(yintercept = 0, linetype = "dashed", color = "gray50")
+  }
+  
+  ggsave(paste0(folder_res, "/", file_name), plot = p, width = 14, height = 14, dpi = 300)
+  return(p)
+}
+
+plot_facet_metric(final_results, "d", "Willmott Index (d)", "Plot_Monthly_Index_d.png")
+plot_facet_metric(final_results, "RMSE", "RMSE (°C)", "Plot_Monthly_RMSE.png")
+plot_facet_metric(final_results, "MAE", "MAE (°C)", "Plot_Monthly_MAE.png")
+plot_facet_metric(final_results, "Pbias", "PBIAS (%)", "Plot_Monthly_PBIAS.png")
+plot_facet_metric(final_results, "R2", "Coefficient of Determination (R²)", "Plot_Monthly_R2.png")
+
+cat("\n==========================================================\n")
+cat("SUCCESS! Monthly analysis saved in 'Results_Monthly_Analysis_Final'.\n")
+cat("Models renamed to MLR/RF and Legend size increased.\n")
+cat("==========================================================\n")
