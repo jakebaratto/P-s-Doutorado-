@@ -1,140 +1,246 @@
 #### Script used for the development of the Post-Doctorate in the Department of Geography at USP by Dr. Jakeline Baratto and funded by FAPESP (process: 2022/02383-3)
 ######################### Regressão Linear Múltipla #########################
 
-# Passo 1: Carregar os pacotes que serão usados
 
-if(!require(pacman)) install.packages("pacman")
-library(pacman)
-
-pacman::p_load(dplyr, car, rstatix, lmtest, ggpubr,
-               QuantPsyc, psych, scatterplot3d)
 if (!require(pacman)) install.packages("pacman")
 library(pacman)
-pacman::p_load(dplyr, car, rstatix, lmtest, ggpubr, QuantPsyc, psych, scatterplot3d, caret, stargazer)
+pacman::p_load(dplyr, car, stargazer, ggplot2, gridExtra, caret, lubridate, MASS, broom, cowplot, ggpmisc, stringr)
+
+rm(list = ls()) 
+
+# --- 1. CONFIGURAÇÃO E LEITURA (SETUP & READ) ---
+cat("\n>>> SELECT THE FILE 'BD_2.csv' <<<\n")
+caminho_arquivo <- file.choose()
+dados_brutos <- read.csv2(caminho_arquivo, header = TRUE) 
+
+pasta_base <- dirname(caminho_arquivo)
+setwd(pasta_base)
+nome_pasta <- "Resultados_Completo_VisualArtigo"
+if (!dir.exists(nome_pasta)) dir.create(nome_pasta)
+
+cat(paste("Saving everything in:", nome_pasta, "\n"))
+
+# --- 2. LIMPEZA ROBUSTA (ROBUST CLEANING) ---
+limpar_dados <- function(df) {
+  # Standardize names
+  colnames(df)[grep("mes", colnames(df), ignore.case = TRUE)]  <- "Mes"
+  colnames(df)[grep("lat", colnames(df), ignore.case = TRUE)]  <- "Latitude"
+  colnames(df)[grep("long", colnames(df), ignore.case = TRUE)] <- "Longitude"
+  colnames(df)[grep("alti", colnames(df), ignore.case = TRUE)] <- "Altitude"
+  
+  # Create ID if missing
+  if(!any(grepl("id", colnames(df), ignore.case = TRUE))) df$ID <- paste0("P", 1:nrow(df))
+  else colnames(df)[grep("id", colnames(df), ignore.case = TRUE)] <- "ID"
+  
+  # Convert numbers
+  cols_num <- c("NDVI", "EVI", "Latitude", "Longitude", "Altitude", "Tar", "Ts_terra", "Ts_aqua", "MDLST_terra", "MDLST_aqua")
+  for(col in cols_num) {
+    if(col %in% colnames(df)) {
+      df[[col]] <- as.numeric(gsub(",", ".", as.character(df[[col]])))
+    }
+  }
+  
+  # Seasonality (Month as Ordered Factor)
+  if("Mes" %in% colnames(df)) df$Mes <- factor(as.numeric(df$Mes), levels=1:12)
+  
+  return(df)
+}
+
+dados <- limpar_dados(dados_brutos)
 
 
-# Passo 2: Carregar o banco de dados
-
-# Importante: selecionar o diretório de trabalho (working directory)
-# Isso pode ser feito manualmente: Session > Set Working Directory > Choose Directory
-
-setwd("G:/My Drive/PD - USP/03_Dados_resultados_usar_PD_FAPESP/Regressão multipla")
-
-
-dados <- read.csv2(file.choose())
-glimpse(dados)
-
-## Construção do modelo:
-mod <- lm(tar ~ NDVI + lat+ long + alti + ts, dados)
+# --- 3. MULTICOLINEARIDADE (MULTICOLLINEARITY DIAGNOSTIC) ---
+cat("\n--- Multicollinearity Diagnostic ---\n")
+sink(paste0(nome_pasta, "/00_Diagnostico_Multicolinearidade.txt"))
+cat("=== REDUNDANCY TEST (NDVI vs EVI) ===\n")
+if("NDVI" %in% colnames(dados) & "EVI" %in% colnames(dados)) {
+  dados_cor <- na.omit(dados[, c("NDVI", "EVI")])
+  cat(paste("Pearson Correlation:", round(cor(dados_cor$NDVI, dados_cor$EVI), 4), "\n"))
+}
+sink()
 
 
-## Análise gráfica:
-par(mfrow=c(2,2))
+# --- 4. FUNÇÃO MESTRE DE ANÁLISE (MASTER ANALYSIS FUNCTION) ---
+processar_satelite <- function(df, nome_satelite, col_lst) {
+  
+  cat(paste0("\n>>> PROCESSING: ", nome_satelite, " <<<\n"))
+  
+  # A. DATA SELECTION
+  cols_uso <- c("ID", "Tar", "EVI", "Mes", col_lst, "Latitude", "Longitude", "Altitude")
+  cols_uso <- cols_uso[cols_uso %in% colnames(df)]
+  dados_mod <- na.omit(df[, cols_uso])
+  
+  if(nrow(dados_mod) == 0) return(NULL)
+  
+  # B. MODELING (StepAIC)
+  vars_iniciais <- c("EVI", "Mes", col_lst)
+  if(length(unique(dados_mod$Latitude)) > 1)  vars_iniciais <- c(vars_iniciais, "Latitude")
+  if(length(unique(dados_mod$Longitude)) > 1) vars_iniciais <- c(vars_iniciais, "Longitude")
+  if(length(unique(dados_mod$Altitude)) > 1)  vars_iniciais <- c(vars_iniciais, "Altitude")
+  
+  form_full <- as.formula(paste("Tar ~", paste(vars_iniciais, collapse=" + ")))
+  mod_full <- lm(form_full, data = dados_mod)
+  
+  cat("   -> Running StepAIC...\n")
+  capture.output(mod_best <- stepAIC(mod_full, direction = "backward", trace = FALSE), file = "NUL")
+  
+  mod_final <- if(AIC(mod_best) < AIC(mod_full)) mod_best else mod_full
+  
+  # C. CONSOLIDATED TABLE PREPARATION
+  metrics_full <- c(AIC(mod_full), BIC(mod_full), summary(mod_full)$adj.r.squared, sqrt(mean(mod_full$residuals^2)))
+  metrics_best <- c(AIC(mod_best), BIC(mod_best), summary(mod_best)$adj.r.squared, sqrt(mean(mod_best$residuals^2)))
+  
+  vars_full_str <- paste(vars_iniciais, collapse = ", ")
+  vars_best_str <- paste(names(coef(mod_best))[-1], collapse = ", ") 
+  vars_best_str <- gsub("Mes[0-9]+", "Mes", vars_best_str) 
+  vars_best_str <- paste(unique(unlist(strsplit(vars_best_str, ", "))), collapse = ", ")
+  
+  df_tabela <- data.frame(
+    Satellite = c(nome_satelite, nome_satelite),
+    Model = c("Full Model", "StepAIC"),
+    Variables = c(vars_full_str, vars_best_str),
+    AIC = c(metrics_full[1], metrics_best[1]),
+    BIC = c(metrics_full[2], metrics_best[2]),
+    R2_Adj = c(metrics_full[3], metrics_best[3]),
+    RMSE = c(metrics_full[4], metrics_best[4])
+  )
+  
+  stargazer(mod_full, mod_best, type="text", title=nome_satelite, out=paste0(nome_pasta, "/05_Resumo_", nome_satelite, ".txt"))
+  
+  # D. IMPORTANCE (PLOT)
+  summ <- summary(mod_final)
+  imp_df <- data.frame(Var=rownames(summ$coefficients), Importance=abs(summ$coefficients[, "t value"]))
+  imp_df <- imp_df[order(-imp_df$Importance), ]
+  imp_plot_df <- imp_df[imp_df$Var != "(Intercept)", ]
+  
+  imp_plot_df$Var <- imp_plot_df$Var %>% 
+    str_replace_all("Mes", "Month ") %>%
+    str_replace_all("Ts_terra", "LST (Terra)") %>%
+    str_replace_all("MDLST_terra", "MDLST (Terra)") %>%
+    str_replace_all("Altitude", "Elevation")
+  
+  # AQUI: Aumentamos a fonte do gráfico de Importância também (base_size = 16)
+  p_imp <- ggplot(imp_plot_df, aes(x=reorder(Var, Importance), y=Importance)) +
+    geom_bar(stat="identity", fill="#2c3e50", width=0.7) + coord_flip() +
+    labs(title=nome_satelite, x="", y="Importance (t-value)") + 
+    theme_bw(base_size = 16)
+  
+  ggsave(paste0(nome_pasta, "/02_Importancia_", nome_satelite, ".png"), p_imp, width=7, height=6)
+  
+  # E. RESIDUAL DIAGNOSTICS
+  png(paste0(nome_pasta, "/03_Residuos_", nome_satelite, ".png"), width=2000, height=2000, res=300)
+  par(mfrow=c(2,2)); plot(mod_final); dev.off(); par(mfrow=c(1,1))
+  
+  # F. PREDICTION + FINAL PLOT (ARTICLE STYLE)
+  dados_mod$Predito <- predict(mod_final, newdata = dados_mod)
+  
+  obs <- dados_mod$Tar
+  pred <- dados_mod$Predito
+  lin_mod <- lm(Predito ~ Tar, data = dados_mod)
+  intercept <- coef(lin_mod)[1]; slope <- coef(lin_mod)[2]
+  sign_int <- if(intercept >= 0) "+" else "-"
+  
+  r2 <- summary(mod_final)$adj.r.squared
+  rmse <- sqrt(mean((pred - obs)^2))
+  mae <- mean(abs(pred - obs))
+  bias <- mean(pred - obs)
+  
+  stats_text <- paste0(
+    "y = ", sprintf("%.2f", slope), "x ", sign_int, " ", sprintf("%.2f", abs(intercept)), "\n",
+    "R² = ", sprintf("%.2f", r2), "\n",
+    "RMSE = ", sprintf("%.2f", rmse), " °C\n",
+    "MAE = ", sprintf("%.2f", mae), " °C\n",
+    "Bias = ", sprintf("%.2f", bias), " °C"
+  )
+  
+  user_palette <- c("1"="#800000","2"="#FF0000","3"="#FA8072","4"="#8B4513","5"="#bc7f17","6"="#DEB887",
+                    "7"="#f7e501","8"="#FFFF00","9"="#fede7d","10"="#D2691E","11"="#FF8C00","12"="#FF4500")
+  
+  limits_range <- range(c(obs, pred))
+  
+  p_pred <- ggplot(dados_mod, aes(x = Tar, y = Predito)) +
+    geom_point(aes(color = Mes), alpha = 0.8, size = 2.5) +
+    geom_smooth(method = "lm", color = "blue", size = 0.8, se = FALSE) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black", size = 0.8) +
+    
+    # AQUI: Aumentamos o tamanho do texto da equação (size = 6)
+    annotate("text", x = limits_range[1], y = limits_range[2], label = stats_text, 
+             hjust = 0, vjust = 1, size = 6, fontface = "bold") +
+    
+    scale_color_manual(values = user_palette, name = "Month", drop=TRUE) +
+    labs(title = nome_satelite, x = "Observed Temperature (°C)", y = "Predicted Temperature (°C)") +
+    
+    # AQUI: base_size = 16 garante que NÚMEROS DO EIXO X/Y fiquem grandes
+    theme_bw(base_size = 16) + 
+    theme(legend.position = "right")
+  
+  return(list(data=dados_mod, plot_imp=p_imp, plot_pred=p_pred, stats_table=df_tabela))
+}
 
-plot(mod)
 
-par(mfrow=c(1,1))
+# --- 5. EXECUÇÃO (EXECUTION) ---
+col_terra <- if("MDLST_terra" %in% colnames(dados)) "MDLST_terra" else "Ts_terra"
+res_terra <- processar_satelite(dados, "MODIS Terra", col_terra)
 
-
-## Normalidade dos resíduos:
-shapiro.test(mod$residuals)
-
-
-## Outliers nos resíduos:
-summary(rstandard(mod))
+res_aqua <- NULL
+col_aqua <- if("MDLST_aqua" %in% colnames(dados)) "MDLST_aqua" else "Ts_aqua"
+if(col_aqua %in% colnames(dados)) res_aqua <- processar_satelite(dados, "MODIS Aqua", col_aqua)
 
 
-## Independência dos resíduos (Durbin-Watson):
-durbinWatsonTest(mod)
+# --- 6. CONSOLIDAÇÃO DA TABELA FINAL (TABLE CONSOLIDATION) ---
+cat("\n--- Generating Consolidated Table ---\n")
+tabela_final <- rbind(res_terra$stats_table, res_aqua$stats_table)
+
+tabela_final$AIC <- round(tabela_final$AIC, 2)
+tabela_final$BIC <- round(tabela_final$BIC, 2)
+tabela_final$R2_Adj <- round(tabela_final$R2_Adj, 3)
+tabela_final$RMSE <- round(tabela_final$RMSE, 3)
+
+write.csv(tabela_final, paste0(nome_pasta, "/00_TABELA_FINAL_CONSOLIDADA.csv"), row.names = FALSE)
+print(tabela_final)
 
 
-## Homocedasticidade (Breusch-Pagan):
-bptest(mod)
+# --- 7. PAINÉIS FINAIS (AJUSTADO: FONTE GRANDE + LEGENDA PERTO) ---
+cat("\n--- Generating Final Panels ---\n")
 
+if(!is.null(res_terra) & !is.null(res_aqua)) {
+  
+  # A. IMPORTANCE PANEL
+  # Aumentamos o width para acomodar a fonte maior sem cortar
+  panel_imp <- plot_grid(res_terra$plot_imp, res_aqua$plot_imp, labels="AUTO", ncol=2)
+  ggsave(paste0(nome_pasta, "/02_Painel_Importancia.png"), panel_imp, width=14, height=6)
+  
+  # B. PREDICTION PANEL
+  # 1. Extrai a legenda (com margem negativa para aproximar)
+  legend_plot <- res_terra$plot_pred + 
+    theme(legend.position = "right",
+          legend.box.margin = margin(0,0,0,0),
+          legend.margin = margin(l = -15)) # Puxa mais para a esquerda
+  
+  legend_side <- get_legend(legend_plot)
+  
+  # 2. Plots limpos
+  p1 <- res_terra$plot_pred + theme(legend.position = "none")
+  p2 <- res_aqua$plot_pred + theme(legend.position = "none")
+  
+  # 3. Grid dos Gráficos
+  grid_plots <- plot_grid(p1, p2, labels="AUTO", ncol=2, align = 'h')
+  
+  # 4. Montagem Final (Legenda 'apertada' ao lado)
+  final_panel <- plot_grid(grid_plots, legend_side, ncol=2, rel_widths = c(1, 0.12))
+  
+  # Aumentamos o tamanho da imagem final para a fonte grande caber bem
+  ggsave(paste0(nome_pasta, "/04_Painel_Predicao_Final.png"), final_panel, width=16, height=7)
+  
+} else {
+  ggsave(paste0(nome_pasta, "/04_Predicao_Terra.png"), res_terra$plot_pred, width=9, height=7)
+}
 
-## Ausência de Multicolinearidade
+# Export Final Data
+write.csv(res_terra$data, paste0(nome_pasta, "/06_Dados_Preditos_Terra.csv"), row.names=FALSE)
+if(!is.null(res_aqua)) write.csv(res_aqua$data, paste0(nome_pasta, "/06_Dados_Preditos_Aqua.csv"), row.names=FALSE)
 
-pairs.panels(dados)
-### Multicolinearidade: r > 0.9 (ou 0.8)
-
-vif(mod)
-### Multicolinearidade: VIF > 10
-
-
-###### Criação de um segundo modelo
-mod2 <- lm(tar ~ NDVI + lat + long + ts, dados)
-
-mod3 <- lm(tar ~ NDVI + alti + ts, dados)
-mod4 <- lm(tar ~ NDVI + ts, dados)
-
-# Passo 4: Análise do modelo
-summary(mod)
-summary(mod2)
-summary(mod3)
-summary(mod4)
-
-## Obtenção dos coeficientes padronizados
-lm.beta(mod)
-lm.beta(mod4)
-
-
-## Obtenção do IC 95% para os coeficientes
-confint(mod)
-confint(mod4)
-
-
-# Comparação de modelos
-
-## AIC e BIC - Comparação entre quaisquer modelos
-AIC(mod, mod4)
-BIC(mod, mod4)
-
-
-## Para comparação entre modelos aninhados
-
-anova(mod, mod4)
-
-### O melhor será o com menor valor de RSS (residual sum of squares)
-
-
-
-# Passo 5: Gráfico de dispersão
-graph <- scatterplot3d(dados$tar ~ dados$NDVI + dados$lat + dados$long + dados$alti + dados$ts,
-                       pch = 16, angle = 30, color = "steelblue", box = FALSE,
-                       xlab="Temperatura (°C)", ylab="Tempo de sono", zlab="Notas")
-graph$plane3d(mod, col="black", draw_polygon = TRUE)
-
-
-
-##################### Métodos de seleção de modelos ###########################
-
-pacman::p_load(MASS)
-
-
-mod.inicial <- lm(tar ~ NDVI + lat + long + alti + ts, data = dados)
-mod.simples <- lm(tar ~ 1, data = dados)
-
-stepAIC(mod.inicial, scope = list(upper = mod.inicial,
-                                  lower = mod.simples), direction = "backward")
-
-
-stargazer(mod1, mod2, mod3, mod4, 
-          type = "text", 
-          title = "Comparação de Modelos de Regressão",
-          column.labels = c("Modelo 1", "Modelo 2", "Modelo 3", "Modelo 4"),
-          dep.var.labels = "tar",
-          covariate.labels = c("NDVI", "Latitude", "Longitude", "Altitude", "TS"),
-          out = "model_comparison.txt")
-
-library(kableExtra)
-
-# Criar tabela de MAE e RMSE
-mae_rmse_table <- data.frame(
-  Model = c("Model 1", "Model 2", "Model 3", "Model 4"),
-  MAE = c(mae1, mae2, mae3, mae4),
-  RMSE = c(rmse1, rmse2, rmse3, rmse4)
-)
-
-# Exibir a tabela
-kable(mae_rmse_table, caption = "Comparação de MAE e RMSE entre Modelos") %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+cat("\n==========================================================\n")
+cat("SUCCESS! FONTE GRANDE (16) aplicada aos Eixos X/Y.\n")
+cat("Check folder: 'Resultados_Completo_VisualArtigo'.\n")
+cat("==========================================================\n")
