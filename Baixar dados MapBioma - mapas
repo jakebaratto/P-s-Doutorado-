@@ -1,8 +1,16 @@
-///Script para baixar os mapas do Mapbiomas - coleção 8. 
-///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE 
-/// desenvolvido por AmbiGEO (2023).
-/// Scritp utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
-/// Projeto desenvolvido pela Dr. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+//////Script para baixar os mapas do Mapbiomas - coleção 8. 
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE desenvolvido por AmbiGEO (2023).
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+///
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
 
 // Collection do mapbioma
 var mapbiomas = 'projects/mapbiomas-workspace/public/collection8/mapbiomas_collection80_integration_v1';
