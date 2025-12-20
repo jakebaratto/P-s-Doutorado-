@@ -1,0 +1,165 @@
+
+
+
+if(!require(pacman)) install.packages("pacman")
+library(pacman)
+pacman::p_load(dplyr, cowplot, ggplot2, hydroGOF, reshape2, gridExtra, stringr)
+
+rm(list = ls()) 
+
+# --- 1. SETUP & DATA LOADING ---
+cat("\n>>> SELECT FILE 'Dados_estiamados.csv' <<<\n")
+file_path <- file.choose()
+
+# Output folder
+base_dir <- dirname(file_path)
+setwd(base_dir)
+folder_res <- "Results_Seasonal_Final_Adjusted"
+if (!dir.exists(folder_res)) dir.create(folder_res)
+
+# Read Data (Robust reading)
+raw_data <- read.csv(file_path, sep = ";", header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+
+# --- ROBUST RENAMING ---
+names(raw_data) <- iconv(names(raw_data), to = "ASCII//TRANSLIT")
+names(raw_data) <- gsub("[^[:alnum:]_]", "", names(raw_data))
+names(raw_data) <- tolower(names(raw_data))
+
+col_id_name <- names(raw_data)[grep("id", names(raw_data))][1]
+col_mes_name <- names(raw_data)[grep("mes|month", names(raw_data))][1]
+col_ta_name  <- names(raw_data)[grep("ta|tar|observed", names(raw_data))][1]
+
+if(!is.na(col_id_name))  names(raw_data)[names(raw_data) == col_id_name]  <- "ID"
+if(!is.na(col_mes_name)) names(raw_data)[names(raw_data) == col_mes_name] <- "Month"
+if(!is.na(col_ta_name))  names(raw_data)[names(raw_data) == col_ta_name]  <- "Ta"
+
+data <- raw_data
+
+if(!"Month" %in% names(data)) stop("CRITICAL ERROR: Could not find 'Month/Mes' column.")
+if(!"Ta" %in% names(data)) stop("CRITICAL ERROR: Could not find 'Ta/Tar' column.")
+
+# Numerical Cleaning
+clean_num <- function(x) {
+  as.numeric(gsub(",", ".", gsub(" ", "", gsub('"', '', as.character(x)))))
+}
+
+# Identify Models
+model_cols_orig <- grep("rf|mr|aqua|terra", names(data), value = TRUE)
+model_cols <- setdiff(model_cols_orig, c("ID", "Month", "Ta"))
+
+cat("\nIdentified Models:", paste(model_cols, collapse=", "), "\n")
+
+for(col in c("Ta", model_cols)) {
+  data[[col]] <- clean_num(data[[col]])
+}
+
+# --- CREATE SEASONALITY WITH (A), (B), (C), (D) ---
+data <- data %>%
+  mutate(Month = as.numeric(Month)) %>%
+  filter(!is.na(Month)) %>%
+  mutate(Season_Code = case_when(
+    Month %in% c(1, 2, 3) ~ "JFM",
+    Month %in% c(4, 5, 6) ~ "AMJ",
+    Month %in% c(7, 8, 9) ~ "JAS",
+    Month %in% c(10, 11, 12) ~ "OND"
+  )) %>%
+  filter(!is.na(Season_Code)) %>%
+  mutate(Season = factor(Season_Code, 
+                         levels = c("JFM", "AMJ", "JAS", "OND"),
+                         labels = c("(A) JFM", "(B) AMJ", "(C) JAS", "(D) OND"))) 
+
+
+# --- 2. CALCULATE METRICS ---
+cat("\n>>> Calculating metrics... <<<\n")
+
+results_list <- list()
+ids_unique <- unique(data$ID)
+seasons <- unique(data$Season)
+
+for(model in model_cols) {
+  for(id in ids_unique) {
+    for(seas in seasons) {
+      
+      df_sub <- data %>% filter(ID == id, Season == seas) %>% na.omit()
+      if(nrow(df_sub) < 3) next 
+      
+      obs <- df_sub$Ta
+      sim <- df_sub[[model]]
+      
+      results_list[[paste(model, id, seas)]] <- data.frame(
+        Model = model, ID = id, Season = seas,
+        r = cor(obs, sim),
+        R2 = cor(obs, sim)^2,
+        MAE = hydroGOF::mae(sim, obs),
+        RMSE = hydroGOF::rmse(sim, obs),
+        d = hydroGOF::d(sim, obs),
+        Pbias = hydroGOF::pbias(sim, obs)
+      )
+    }
+  }
+}
+
+if(length(results_list) == 0) stop("ERROR: No metrics calculated.")
+final_results <- bind_rows(results_list)
+
+# --- RENAMING MODELS (MR -> MLR) ---
+cat("Renaming models for Legend (MR -> MLR)...\n")
+final_results$Model <- final_results$Model %>%
+  gsub("mr_", "MLR_", ., ignore.case = TRUE) %>%
+  gsub("rf_", "RF_", ., ignore.case = TRUE)
+
+write.csv(final_results, paste0(folder_res, "/Metrics_Table_Complete.csv"), row.names = FALSE)
+
+
+# --- 3. PLOTTING (ENGLISH + MINIMAL + HUGE LEGEND) ---
+cat("\n>>> Generating plots... <<<\n")
+
+my_palette <- c("#f63e02", "#ff6201", "#1E88E5", "#004D40", "#D81B60", "#FFC107", "#5D4037", "#7B1FA2")
+
+plot_facet_metric <- function(df, metric_col, y_label, file_name) {
+  
+  p <- ggplot(df, aes_string(x = "ID", y = metric_col)) +
+    geom_point(aes(shape = Model, color = Model), size = 5, alpha = 0.9) +
+    
+    facet_wrap(~Season, ncol = 2, scales = "fixed") + 
+    
+    labs(y = y_label, x = "Sample Points (ID)", color = "", shape = "") +
+    
+    theme_minimal() + 
+    theme(
+      legend.position = "bottom",
+      
+      # --- AUMENTO DA LEGENDA AQUI ---
+      legend.text = element_text(size = 18, color="black"), # Texto tamanho 18
+      legend.key.size = unit(2.5, "lines"),                 # Símbolo Grande
+      legend.spacing.x = unit(0.5, 'cm'),                   # Espaçamento
+      # -------------------------------
+      
+      axis.text = element_text(size = 12, color="black"),
+      axis.title = element_text(size = 14, face="bold"),
+      
+      strip.text = element_text(size = 14, face="bold", hjust = 0), 
+      
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill=NA, size=0.5)
+    ) +
+    scale_color_manual(values = rep(my_palette, length.out = length(unique(df$Model))))
+  
+  if(metric_col == "Pbias") {
+    p <- p + geom_hline(yintercept = 0, linetype = "dashed", color = "gray50")
+  }
+  
+  ggsave(paste0(folder_res, "/", file_name), plot = p, width = 12, height = 8, dpi = 300)
+  return(p)
+}
+
+plot_facet_metric(final_results, "d", "Willmott Index (d)", "Plot_Index_d.png")
+plot_facet_metric(final_results, "RMSE", "RMSE (°C)", "Plot_RMSE.png")
+plot_facet_metric(final_results, "MAE", "MAE (°C)", "Plot_MAE.png")
+plot_facet_metric(final_results, "Pbias", "PBIAS (%)", "Plot_PBIAS.png")
+plot_facet_metric(final_results, "R2", "Coefficient of Determination (R²)", "Plot_R2.png")
+
+cat("\n==========================================================\n")
+cat("SUCCESS! Seasonal plots (MLR/RF renamed + Big Legend) saved in:\n")
+cat(paste0("'", folder_res, "'\n"))
+cat("==========================================================\n")
