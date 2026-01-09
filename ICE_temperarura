@@ -1,0 +1,138 @@
+# # ==============================================================================
+# SCRIPT DE PÓS-DOUTORADO - DEPARTAMENTO DE GEOGRAFIA (USP)
+# ==============================================================================
+# 
+# Pesquisadora:  Dra. Jakeline Baratto
+# Financiamento: FAPESP (Processo: 2022/02383-3)
+#
+# Objetivo do Script: Indicadores extremos temperatura do ar e analise de tendência
+
+# Carregar pacotes necessários
+library(tidyverse)
+library(trend)
+library(gridExtra)
+
+# --- 1. CONFIGURAÇÃO E CARREGAMENTO DE DADOS ---
+
+# Definir o diretório de trabalho
+setwd("G:/My Drive/PD - USP/04_Artigos/SBCG 2025/02-BD-complemento/indicadores extremos")
+
+# Ler os dados em .csv
+# Use read.csv2() se o separador for ';'.
+# Use read_csv() se o separador for ','.
+dados <- read.csv2(file.choose())
+
+# Verificação inicial dos dados
+glimpse(dados)
+
+# --- 2. FILTRAR DADOS E GERAR GRÁFICOS ---
+
+# A função agora aceita um data.frame, o nome do indicador e o rótulo do eixo Y
+create_plot <- function(data, indicador_name, y_label) {
+  # Garantir que as colunas year e Value sejam numéricas
+  data <- data %>%
+    mutate(year = as.numeric(year), Value = as.numeric(Value))
+  
+  # Testes estatísticos
+  mk_test <- mk.test(data$Value)
+  zmk <- mk_test$statistic
+  p_value <- mk_test$p.value
+  sen_slope <- sens.slope(data$Value)
+  sen_slope_annual <- round(sen_slope$estimates, 4)
+  
+  # Inclinação da regressão linear (LM Slope, por ano)
+  lm_model <- lm(Value ~ year, data = data)
+  slope_lm_annual <- round(coef(lm_model)[["year"]], 4)
+  
+  # Criar o gráfico com a legenda automática e dentro do gráfico
+  plot <- ggplot(data, aes(x = year, y = Value)) +
+    geom_line(aes(color = "Dados Observados"), linewidth = 1) +
+    geom_point(aes(color = "Dados Observados"), size = 2, show.legend = FALSE) +
+    geom_smooth(method = "lm", aes(color = "Linha de Tendência"), se = FALSE,
+                linetype = "dashed", linewidth = 1.5) +
+    
+    # Aumentar o limite superior do eixo Y dinamicamente para acomodar as anotações
+    expand_limits(y = max(data$Value) * 1.3) + 
+    
+    # Adicionar escalas de eixos dinâmicas para evitar erros
+    scale_y_continuous() + 
+    scale_x_continuous(
+      breaks = seq(min(data$year), max(data$year), by = 2),
+      labels = as.character(seq(min(data$year), max(data$year), by = 2))
+    ) +
+    
+    # Títulos e rótulos
+    labs(
+      title = paste0(indicador_name, " - Manguezal"),
+      x = "Year",
+      y = y_label,
+      color = NULL # Remover o título da legenda
+    ) +
+    
+    # Definir cores da legenda
+    scale_color_manual(values = c("Dados Observados" = "orange", "Linha de Tendência" = "red")) +
+    
+    # Estilos do gráfico
+    theme_minimal(base_size = 16) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 22),
+      axis.text.x = element_text(angle = 270, hjust = 1, vjust = 0.5, size = 24,color = "black"), # Tamanho aumentado para o eixo X
+      axis.text.y = element_text(size = 24,color = "black"),
+      axis.title.x = element_text(size = 22, margin = margin(t = 15)),
+      axis.title.y = element_text(size = 22, margin = margin(r = 15)),
+      legend.text = element_text(size = 20),
+      legend.position = c(0.8, 0.9),
+      legend.justification = c(0, 1),
+      legend.background = element_blank()# Aumentado o tamanho para o eixo Y
+      # Rotação para o eixo X
+    ) +
+    
+    # Adicionar anotações ao gráfico (agora na posição correta)
+    annotate("text", x = min(data$year), y = max(data$Value) * 1.3, # Posicionado mais alto
+             label = paste("p-value:", sprintf("%.3f", p_value), "\n",
+                           "Sen's Slope:", sen_slope_annual, "\n",
+                           "LM Slope:", slope_lm_annual, "\n",
+                           "ZMK:", round(zmk, 2)),
+             hjust = 0, vjust = 1.1, size = 10, color = "black")
+  
+  return(plot)
+}
+
+# --- 3. FILTRAR DADOS E GERAR GRÁFICOS PARA CADA INDICADOR ---
+
+# CORRIGIDO: O nome da coluna é 'Indicador' (com 'I' maiúsculo)
+stations_su30 <- dados %>% filter(indicador == "SU30")
+plot_su30 <- create_plot(stations_su30, "SU30", "SU30 (°C)") +
+  labs(tag = "A")
+
+stations_su35 <- dados %>% filter(indicador == "SU35")
+plot_su35 <- create_plot(stations_su35, "SU35", "SU35 (°C)")+
+  labs(tag = "B")
+
+
+stations_tn10p <- dados %>% filter(indicador == "TN10p")
+plot_tn10p <- create_plot(stations_tn10p, "TN10p", "TN10p (°C)")
++
+  labs(tag = "C")
+
+
+
+# --- 4. COMBINAR OS GRÁFICOS EM UMA ÚNICA FIGURA ---
+
+plot_list <- list(plot_su30, plot_su35, plot_tn10p)
+
+# Combina os gráficos em uma grade de 3 linhas e 1 coluna
+combined_plot <- grid.arrange(grobs = plot_list, ncol = 1)
+
+
+# --- 5. SALVAR A FIGURA COMBINADA ---
+
+ggsave(
+  filename = "Fig_Indicadores_Combinados.png",
+  plot = combined_plot,
+  path = getwd(),
+  dpi = 300,
+  width = 50,
+  height = 75, # Aumentado a altura para acomodar 3 gráficos em uma coluna
+  units = "cm"
+)
