@@ -1,0 +1,278 @@
+/ PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+//////Script para baixar os mapas do Mapbiomas - coleção 8. 
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE desenvolvido por AmbiGEO (2023).
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+///
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
+////////////////////////////////////////////////////////////////////////////////
+// 1. DEFINITIONS AND INPUT DATA
+////////////////////////////////////////////////////////////////////////////////
+
+// MapBiomas Collection 9
+var mapbiomas = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection8/mapbiomas_collection80_integration_v1');
+
+// Study area
+var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+
+// Years for transition analysis
+var year_initial = 1985;
+var year_final   = 2022;
+
+// Select annual LULC layers
+var lulc_initial_raw = mapbiomas.select('classification_' + year_initial).clip(roi);
+var lulc_final_raw   = mapbiomas.select('classification_' + year_final).clip(roi);
+
+////////////////////////////////////////////////////////////////////////////////
+// 2. RECLASSIFICATION TO 8 CONSOLIDATED CLASSES
+////////////////////////////////////////////////////////////////////////////////
+
+// Original MapBiomas Collection 9 class IDs expected in the study area
+var ids_originais = [
+  3, 49, 6,              // Forest Formation, Wooded Sandbank Vegetation, Herbaceous Sandbank Vegetation
+  5,                     // Mangrove
+  32,                    // Hypersaline Tidal Flat
+  24,                    // Urban Area
+  23,                    // Beach, Dune and Sand Spot
+  33,                    // River, Lake and Ocean
+  13, 25, 29,            // Other non-Forest Formations, Other non-Vegetated Areas, Rocky Outcrop
+  9, 15, 21, 39, 41, 50, // Forest Plantation, Pasture, Mosaic of Uses, Soybean, Other Temporary Crops, Other Perennial Crops
+  11                     // Wetland
+];
+
+// Reclassified IDs following the 8 consolidated classes used in the manuscript
+var ids_reclass = [
+  1, 1, 1,              // 1 = Native Vegetation
+  2,                    // 2 = Mangrove
+  4,                    // 4 = Non-Vegetated Areas
+  3,                    // 3 = Urbanized Area
+  5,                    // 5 = Sand
+  6,                    // 6 = Water Bodies
+  4, 4, 4,              // 4 = Non-Vegetated Areas
+  7, 7, 7, 7, 7, 7,     // 7 = Agriculture and Pasture
+  8                     // 8 = Flooded Field
+];
+
+// Apply remap with default value 0 for any class not explicitly listed
+var lulc_initial = lulc_initial_raw
+  .remap(ids_originais, ids_reclass, 0)
+  .rename('class_initial');
+
+var lulc_final = lulc_final_raw
+  .remap(ids_originais, ids_reclass, 0)
+  .rename('class_final');
+
+// Mask pixels that were not remapped
+lulc_initial = lulc_initial.updateMask(lulc_initial.neq(0));
+lulc_final   = lulc_final.updateMask(lulc_final.neq(0));
+
+// Dictionary for labeling outputs
+var nomes_classes = ee.Dictionary({
+  '1': 'Native Vegetation',
+  '2': 'Mangrove',
+  '3': 'Urbanized Area',
+  '4': 'Non-Vegetated Areas',
+  '5': 'Sand',
+  '6': 'Water Bodies',
+  '7': 'Agriculture and Pasture',
+  '8': 'Flooded Field'
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// 3. OPTIONAL MAP VISUALIZATION
+////////////////////////////////////////////////////////////////////////////////
+
+var palette = [
+  '#228B22', // Native Vegetation
+  '#00C853', // Mangrove
+  '#FF0000', // Urbanized Area
+  '#9E9E9E', // Non-Vegetated Areas
+  '#F4A460', // Sand
+  '#1E88E5', // Water Bodies
+  '#FFD54F', // Agriculture and Pasture
+  '#00BCD4'  // Flooded Field
+];
+
+Map.centerObject(roi, 10);
+Map.addLayer(lulc_initial, {min: 1, max: 8, palette: palette}, 'LULC ' + year_initial);
+Map.addLayer(lulc_final,   {min: 1, max: 8, palette: palette}, 'LULC ' + year_final);
+Map.addLayer(roi, {color: 'black'}, 'ROI', false);
+
+////////////////////////////////////////////////////////////////////////////////
+// 4. TRANSITION MATRIX CALCULATION
+////////////////////////////////////////////////////////////////////////////////
+
+// Encode transitions as (initial * 100) + final
+var transitionImage = lulc_initial.multiply(100).add(lulc_final).rename('transition');
+
+// Calculate area in km²
+var areaStats = ee.Image.pixelArea()
+  .divide(1e6)
+  .addBands(transitionImage)
+  .reduceRegion({
+    reducer: ee.Reducer.sum().group({
+      groupField: 1,
+      groupName: 'transition_code'
+    }),
+    geometry: roi.geometry(),
+    scale: 30,
+    maxPixels: 1e13,
+    tileScale: 4
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// 5. CONVERT TRANSITION STATISTICS TO FEATURE COLLECTION
+////////////////////////////////////////////////////////////////////////////////
+
+var transitionList = ee.List(areaStats.get('groups'));
+
+var transitionFeatures = transitionList.map(function(item) {
+  var dict = ee.Dictionary(item);
+  var code = ee.Number(dict.get('transition_code'));
+  var class_initial_id = code.divide(100).floor().toInt();
+  var class_final_id   = code.mod(100).toInt();
+  var area_km2 = ee.Number(dict.get('sum'));
+
+  return ee.Feature(null, {
+    'year_initial': year_initial,
+    'year_final': year_final,
+    'id_initial': class_initial_id,
+    'id_final': class_final_id,
+    'label_initial': nomes_classes.get(class_initial_id.format('%d')),
+    'label_final': nomes_classes.get(class_final_id.format('%d')),
+    'area_km2': area_km2
+  });
+});
+
+var transitionCollection = ee.FeatureCollection(transitionFeatures);
+
+print('Transition matrix as FeatureCollection', transitionCollection.limit(20));
+
+////////////////////////////////////////////////////////////////////////////////
+// 6. STACKED CHART FOR QUICK VISUAL INSPECTION
+////////////////////////////////////////////////////////////////////////////////
+
+var chart = ui.Chart.feature.groups({
+  features: transitionCollection,
+  xProperty: 'label_initial',
+  yProperty: 'area_km2',
+  seriesProperty: 'label_final'
+})
+.setChartType('ColumnChart')
+.setOptions({
+  title: 'LULC Transition Dynamics (' + year_initial + '–' + year_final + ')',
+  isStacked: true,
+  vAxis: {title: 'Area (km²)'},
+  hAxis: {title: 'Initial class (' + year_initial + ')'},
+  legend: {position: 'right'}
+});
+
+print(chart);
+
+////////////////////////////////////////////////////////////////////////////////
+// 7. EXPORT FULL TRANSITION MATRIX
+////////////////////////////////////////////////////////////////////////////////
+
+Export.table.toDrive({
+  collection: transitionCollection,
+  description: 'Transition_Matrix_CICS_' + year_initial + '_' + year_final,
+  folder: 'GEE_Results',
+  fileNamePrefix: 'transition_matrix_cics_' + year_initial + '_' + year_final,
+  fileFormat: 'CSV',
+  selectors: [
+    'year_initial',
+    'year_final',
+    'id_initial',
+    'id_final',
+    'label_initial',
+    'label_final',
+    'area_km2'
+  ]
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// 8. SUMMARY TABLE BY CLASS
+////////////////////////////////////////////////////////////////////////////////
+
+var classIds = ee.List.sequence(1, 8);
+
+var summaryFeatures = classIds.map(function(classId) {
+  classId = ee.Number(classId);
+  var className = ee.String(nomes_classes.get(classId.format('%d')));
+
+  // Total area in initial year
+  var sumInitial = transitionCollection
+    .filter(ee.Filter.eq('id_initial', classId))
+    .reduceColumns(ee.Reducer.sum(), ['area_km2'])
+    .get('sum');
+
+  // Total area in final year
+  var sumFinal = transitionCollection
+    .filter(ee.Filter.eq('id_final', classId))
+    .reduceColumns(ee.Reducer.sum(), ['area_km2'])
+    .get('sum');
+
+  // Persistence
+  var sumPersist = transitionCollection
+    .filter(ee.Filter.and(
+      ee.Filter.eq('id_initial', classId),
+      ee.Filter.eq('id_final', classId)
+    ))
+    .reduceColumns(ee.Reducer.sum(), ['area_km2'])
+    .get('sum');
+
+  var totalInitial = ee.Number(ee.Algorithms.If(sumInitial, sumInitial, 0));
+  var totalFinal   = ee.Number(ee.Algorithms.If(sumFinal, sumFinal, 0));
+  var persistence  = ee.Number(ee.Algorithms.If(sumPersist, sumPersist, 0));
+  var netChange    = totalFinal.subtract(totalInitial);
+
+  return ee.Feature(
+    null,
+    ee.Dictionary()
+      .set('Class', className)
+      .set('Total_' + year_initial + '_km2', totalInitial)
+      .set('Total_' + year_final + '_km2', totalFinal)
+      .set('Persistence_km2', persistence)
+      .set('Net_change_km2', netChange)
+  );
+});
+
+var summaryCollection = ee.FeatureCollection(summaryFeatures);
+
+print('Summary table by class', summaryCollection);
+
+Export.table.toDrive({
+  collection: summaryCollection,
+  description: 'Summary_Table_CICS_' + year_initial + '_' + year_final,
+  folder: 'GEE_Results',
+  fileNamePrefix: 'summary_table_cics_' + year_initial + '_' + year_final,
+  fileFormat: 'CSV'
+});
+////////////////////////////////////////////////////////////////////////////////
+// 9. TOP TRANSITIONS TABLE
+////////////////////////////////////////////////////////////////////////////////
+
+// Sort by area and keep the largest transitions
+var topTransitions = transitionCollection
+  .sort('area_km2', false)
+  .limit(20);
+
+print('Top transitions', topTransitions);
+
+Export.table.toDrive({
+  collection: topTransitions,
+  description: 'Top_Transitions_CICS_' + year_initial + '_' + year_final,
+  folder: 'GEE_Results',
+  fileNamePrefix: 'top_transitions_cics_' + year_initial + '_' + year_final,
+  fileFormat: 'CSV',
+  selectors: [
+    'label_initial',
+    'label_final',
+    'area_km2'
+  ]
+});
