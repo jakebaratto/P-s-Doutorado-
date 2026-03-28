@@ -1,0 +1,127 @@
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+///Script para baixar dados de SPEI 
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
+
+// ============================================================================
+//      SPEI: GRÁFICO TEMPORAL + EXPORTAÇÃO COM REAMOSTRAGEM (500m)
+// ============================================================================
+
+// 1. DEFINIÇÃO DA ÁREA DE ESTUDO
+// var roi= ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso');
+
+
+// Filtra a bacia pelo ponto
+
+
+Map.centerObject(roi, 9);
+// Adiciona o contorno da bacia (vazio por dentro) para visualizar melhor
+var empty = ee.Image().byte();
+var outline = empty.paint({featureCollection: roi, color: 1, width: 2});
+Map.addLayer(outline, {palette: 'black'}, 'ROI - Limite da Bacia');
+
+
+// 2. CARREGAR E REAMOSTRAR A COLEÇÃO SPEI
+var rawCollection = ee.ImageCollection("CSIC/SPEI/2_10")
+  .select('SPEI_01_month') 
+  .filterDate('2003-01-01', '2022-12-31');
+
+// APLICAÇÃO DE REAMOSTRAGEM (SUAVIZAÇÃO)
+// O dado original é 55km. Para sair em 500m sem ficar "quadrado", usamos bilinear.
+var speiCollection = rawCollection.map(function(img) {
+  return img.resample('bilinear') 
+            .clip(roi) // Recorta logo para economizar memória
+            .copyProperties(img, ['system:time_start', 'system:time_end']);
+});
+
+
+// 3. GRÁFICO TEMPORAL (SÉRIE HISTÓRICA)
+// Plota a média da bacia ao longo do tempo
+var chart = ui.Chart.image.series({
+  imageCollection: speiCollection,
+  region: roi,
+  reducer: ee.Reducer.mean(),
+  scale: 500, // Escala do gráfico (500m)
+  xProperty: 'system:time_start'
+})
+.setOptions({
+  title: 'Série Histórica SPEI (Média na Bacia)',
+  vAxis: {title: 'Índice SPEI'},
+  hAxis: {title: 'Ano'},
+  lineWidth: 1,
+  pointSize: 2,
+  colors: ['blue'],
+  trendlines: { 0: {color: 'red', opacity: 0.5} } // Linha de tendência
+});
+
+print(chart); // Exibe o gráfico no Console (lado direito)
+
+
+// 4. PROCESSAMENTO: EMPILHAMENTO MENSAL POR ANO
+// Prepara os dados para exportação (12 bandas por imagem anual)
+var anos = ee.List.sequence(2003, 2022); 
+
+var colecaoAnual = ee.ImageCollection.fromImages(anos.map(function(ano) {
+  
+  var anoInicio = ee.Date.fromYMD(ano, 1, 1);
+  var anoFim = ee.Date.fromYMD(ano, 12, 31);
+  
+  // Pega imagens do ano
+  var imagensDoAno = speiCollection.filterDate(anoInicio, anoFim.advance(1, 'day'));
+  
+  // Empilha as bandas
+  var imagemEmpilhada = imagensDoAno.toBands();
+  
+  var nomesBandas = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 
+                     'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  
+  // Checagem de consistência (precisa ter 12 meses)
+  return ee.Algorithms.If(
+    imagensDoAno.size().eq(12),
+    imagemEmpilhada.rename(nomesBandas)
+                   .set('ano', ano)
+                   .set('system:time_start', anoInicio.millis())
+                   .set('system:id', ee.String(ee.Number(ano).toInt())),
+    null 
+  );
+}, true));
+
+print('Imagens anuais prontas para exportação:', colecaoAnual.size());
+
+
+// 5. VISUALIZAÇÃO
+var paletaSeca = ['730000', 'e60000', 'ffaa00', 'cdcd66', 'ffffff', 'bfe5ff', '0094ff', '002b73'];
+
+// Mostra a banda de Janeiro suavizada
+Map.addLayer(colecaoAnual.first().select('Jan'), {
+  min: -2.5, 
+  max: 2.5, 
+  palette: paletaSeca
+}, 'SPEI Reamostrado (500m) - Jan 1980');
+
+
+// 6. EXPORTAÇÃO EM LOTE (BATCH)
+var batch = require('users/fitoprincipe/geetools:batch');
+
+batch.Download.ImageCollection.toDrive(colecaoAnual, 'SPEI_500m_Export', {
+  name: 'SPEI_Mensal_500m_{ano}', 
+  scale: 500,                // <--- AQUI ESTÁ A MUDANÇA PARA 500 METROS
+  region: roi,               
+  type: 'float'              
+});
+
+// ========================================================
+// NOTA TÉCNICA:
+// O dataset SPEI tem resolução nativa de ~55km. Ao exportar com 500m,
+// estamos fazendo uma INTERPOLAÇÃO espacial. Isso melhora a estética do mapa
+// (fica suave), mas não aumenta a precisão científica do dado climático.
+// ========================================================
