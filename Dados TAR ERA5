@@ -16,7 +16,7 @@
 // =========================================================================
 
 // 1. DEFINIÇÃO DA ROI E PARÂMETROS
-var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso');
 Map.centerObject(roi, 8);
 
 // Datas
