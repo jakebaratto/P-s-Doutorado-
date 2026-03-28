@@ -1,0 +1,185 @@
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+//////Script para baixar dados de evepotranspiração
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE desenvolvido por AmbiGEO (2023).
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
+
+// ==========================================================
+// 1. DEFINIÇÃO DA ÁREA E VARIÁVEIS DE TEMPO
+// ==========================================================
+var start_year = 2003;
+var end_year = 2022;
+
+var startdate = ee.Date.fromYMD(start_year, 1, 1);
+var enddate = ee.Date.fromYMD(end_year, 12, 31);
+
+// Área de Interesse
+var roi_original = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso');
+var roi_simples = roi_original.geometry().simplify(500);
+
+// Visualização no mapa
+var empty = ee.Image().byte();
+var contorno = empty.paint({featureCollection: roi_original, color: 1, width: 2});
+Map.centerObject(roi_original, 10);
+Map.addLayer(contorno, {palette:['red']}, 'Limite SCCI');
+
+
+// ==========================================================
+// 2. COLEÇÃO MODIS COM MÁSCARA DE QUALIDADE (QC)
+// ==========================================================
+
+/**
+ * Função para mascarar pixels de baixa qualidade.
+ * Baseado na banda ET_QC do MOD16A2.
+ */
+function maskQuality(image) {
+  var qc = image.select('ET_QC');
+  
+  // Bit 0: Estado de Nuvem (0 = Sem nuvens significativas)
+  var cloud = qc.bitwiseAnd(1).eq(0);
+  
+  // Aplica a máscara
+  return image.updateMask(cloud);
+}
+
+function scale(image){
+  return image.multiply(0.1) 
+              .copyProperties(image, ['system:time_start']);
+}
+
+// Carrega a coleção, aplica QC, seleciona ET e ajusta escala (0.1)
+var ET_bruto = ee.ImageCollection("MODIS/061/MOD16A2GF")
+                  .filterBounds(roi_simples)
+                  .filterDate(startdate, enddate.advance(1, 'day'))
+                  .map(maskQuality) // 1. Remove nuvens ruins
+                  .select('ET')     // 2. Seleciona banda de dados
+                  .map(scale);      // 3. Ajusta escala do satélite
+
+print('Imagens processadas (com máscara QC):', ET_bruto.size());
+
+// ==========================================================
+// 3. PARTE A: GERAÇÃO DO GRÁFICO (CORRIGIDO P/ MENSAL)
+// ==========================================================
+
+var total_anos = end_year - start_year + 1;
+var total_meses = total_anos * 12; 
+
+var serie_mensal_continua = ee.ImageCollection(
+  ee.List.sequence(0, total_meses - 1).map(function(n) {
+    var ini = startdate.advance(n, 'month');
+    var fim = ini.advance(1, 'month');
+    
+    // --- CÁLCULO DO TOTAL MENSAL ---
+    var dias_no_mes = fim.difference(ini, 'day');
+    var img_media_8dias = ET_bruto.filterDate(ini, fim).mean();
+    
+    // Transforma mm/8dias em mm/mês
+    return img_media_8dias.divide(8).multiply(dias_no_mes)
+                    .set('system:time_start', ini.millis()); 
+  })
+);
+
+serie_mensal_continua = serie_mensal_continua.filter(ee.Filter.listContains("system:band_names", "ET"));
+
+var chart_serie = ui.Chart.image.series({
+  imageCollection: serie_mensal_continua,
+  region: roi_simples,
+  reducer: ee.Reducer.mean(),
+  scale: 500,
+  xProperty: 'system:time_start'
+})
+.setOptions({
+  title: 'Série Histórica ET (QC + Total Mensal) - SCCI (' + start_year + '-' + end_year + ')',
+  hAxis: {title: 'Ano', format: 'yyyy', gridlines: {count: total_anos}},
+  vAxis: {title: 'ET Total Mensal (mm)'}, // Título ajustado
+  lineWidth: 1.5,
+  pointSize: 0,
+  series: {0: {color: '1f77b4'}},
+  backgroundColor: '#f9f9f9'
+})
+.setChartType('LineChart');
+
+print(chart_serie);
+
+
+// ==========================================================
+// 4. PARTE B: EXPORTAÇÃO (Multibanda + QC + Mensal)
+// ==========================================================
+
+var years = ee.List.sequence(start_year, end_year);
+var months = ee.List.sequence(1, 12);
+
+var colecao_anual_multibanda = ee.ImageCollection(years.map(function(ano) {
+  
+  var lista_bandas_mes = months.map(function(mes) {
+    var inicio = ee.Date.fromYMD(ano, mes, 1);
+    var fim = inicio.advance(1, 'month');
+    
+    // --- CÁLCULO DO TOTAL MENSAL ---
+    var dias_no_mes = fim.difference(inicio, 'day');
+    var img_mes = ET_bruto.filterDate(inicio, fim).mean();
+    
+    // Transforma mm/8dias em mm/mês
+    img_mes = img_mes.divide(8).multiply(dias_no_mes);
+
+    var nome_banda = ee.String('ET_').cat(ee.Number(mes).format('%02d'));
+    
+    return ee.Algorithms.If(
+        img_mes.bandNames().size().gt(0),
+        img_mes.rename(nome_banda),
+        ee.Image(0).rename(nome_banda).selfMask()
+    );
+  });
+
+  var imagem_anual = ee.ImageCollection.fromImages(lista_bandas_mes).toBands();
+  
+  var nomes_finais = [
+    'ET_jan', 'ET_fev', 'ET_mar', 'ET_abr', 'ET_mai', 'ET_jun',
+    'ET_jul', 'ET_ago', 'ET_set', 'ET_out', 'ET_nov', 'ET_dez'
+  ];
+
+  return imagem_anual.rename(nomes_finais)
+                      .set('year', ano)
+                      .set('system:time_start', ee.Date.fromYMD(ano, 1, 1).millis())
+                      .clip(roi_simples)
+                      .float();
+}));
+
+// ==========================================================
+// 5. EXPORTAÇÃO AUTOMÁTICA
+// ==========================================================
+
+var lista_anos_js = [];
+for (var i = start_year; i <= end_year; i++) {
+  lista_anos_js.push(i);
+}
+
+lista_anos_js.forEach(function(ano) {
+  var imagem_export = colecao_anual_multibanda
+                        .filter(ee.Filter.eq('year', ano))
+                        .first();
+  
+  // Nome do arquivo indicando QC
+  var nome_arquivo = 'MOD16A2_ET_SCCI_Mensal_QC_' + ano;
+  
+  Export.image.toDrive({
+    image: imagem_export,
+    description: 'Export_ET_QC_' + ano,
+    folder: 'GEE_MODIS_SCCI_20anos_QC', 
+    fileNamePrefix: nome_arquivo,
+    region: roi_original, 
+    scale: 500,
+    crs: 'EPSG:4326',
+    maxPixels: 1e13,
+    fileFormat: 'GeoTIFF'
+  });
+});
+
+print('Tarefas de exportação com QC e valores Corrigidos criadas.');
