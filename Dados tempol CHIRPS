@@ -1,0 +1,140 @@
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+//////Script para baixar dados de Precipitação (CHIRPS) reamostrada para 250 m
+///// Selecionando apenas as bandas com qualidade
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE desenvolvido por AmbiGEO (2023).
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
+
+// 1. DEFINIÇÃO DA ROI E PARÂMETROS INICIAIS
+// var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso')
+
+Map.centerObject(roi, 8);
+
+// Definir as datas
+var startdate = ee.Date.fromYMD(2003, 1, 1);
+var enddate = ee.Date.fromYMD(2022, 12, 31);
+
+// CORREÇÃO: Lista de meses de 1 a 12 (antes estava apenas 12)
+var months = ee.List.sequence(1, 12);
+var years = ee.List.sequence(2003, 2022);
+
+// 2. COLEÇÃO CHIRPS
+var coll = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+    .select('precipitation')
+    .filterDate(startdate, enddate)
+    .filterBounds(roi);
+
+// 3. CÁLCULO MENSAL ACUMULADO (Série Temporal)
+var precipitacao_mensal_acum = ee.ImageCollection.fromImages(
+    years.map(function (y) {
+        return months.map(function (m) {
+            var precipitation_month = coll
+                .filter(ee.Filter.calendarRange(y, y, 'year'))
+                .filter(ee.Filter.calendarRange(m, m, 'month'))
+                .sum() // Soma diária para ter o total do mês
+                .clip(roi);
+            
+            // Copia as propriedades de data para facilitar o gráfico depois
+            return precipitation_month
+                .set('year', y)
+                .set('month', m)
+                .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+        });
+    }).flatten()
+);
+
+// 4. GERAÇÃO DO RESUMO ESTATÍSTICO (O que você pediu)
+// Vamos iterar por cada mês (Jan, Fev...) e calcular a estatística histórica
+
+var estatisticas_mensais = ee.FeatureCollection(months.map(function(m) {
+  // Filtra apenas o mês 'm' em todos os anos (ex: todos os Janeiros de 81 a 22)
+  var colFiltrada = precipitacao_mensal_acum.filter(ee.Filter.eq('month', m));
+  
+  // Primeiro: Reduzir espacialmente (média da área da ROI para cada ano)
+  var dadosEspaciais = colFiltrada.map(function(img) {
+    var val = img.reduceRegion({
+      reducer: ee.Reducer.mean(), // Média espacial da ROI
+      geometry: roi,
+      scale: 5000, // Escala nativa do CHIRPS (~5km) para ser mais rápido
+      maxPixels: 1e13
+    }).get('precipitation');
+    return ee.Feature(null, {'precipitation': val});
+  });
+  
+  // Segundo: Reduzir temporalmente (Média, Mín e Máx histórico daquele mês)
+  var media = dadosEspaciais.aggregate_mean('precipitation');
+  var min = dadosEspaciais.aggregate_min('precipitation');
+  var max = dadosEspaciais.aggregate_max('precipitation');
+  
+  return ee.Feature(null).set({
+    'Mes': m,
+    'Precipitacao_Media': media,
+    'Precipitacao_Minima': min,
+    'Precipitacao_Maxima': max
+  });
+}));
+
+// 5. IMPRIMIR RESULTADOS
+print('--- RESUMO ESTATÍSTICO MENSAL ---');
+
+// Cria um gráfico com os valores calculados
+var chartResumo = ui.Chart.feature.byFeature(estatisticas_mensais, 'Mes', ['Precipitacao_Media', 'Precipitacao_Minima', 'Precipitacao_Maxima'])
+    .setChartType('LineChart')
+    .setOptions({
+      title: 'Climatologia da Precipitação (1981-2022)',
+      hAxis: {title: 'Mês', ticks: [1,2,3,4,5,6,7,8,9,10,11,12]},
+      vAxis: {title: 'Precipitação (mm)'},
+      series: {
+        0: {color: 'blue', lineWidth: 3, labelInLegend: 'Média Histórica'}, // Média
+        1: {color: 'red', lineDashStyle: [4, 4], labelInLegend: 'Mínimo Histórico'}, // Min
+        2: {color: 'green', lineDashStyle: [4, 4], labelInLegend: 'Máximo Histórico'} // Max
+      }
+    });
+
+print(chartResumo);
+
+// Imprimir os valores brutos no console para copiar se precisar
+print('Tabela de Valores:', estatisticas_mensais);
+
+
+// --- O RESTANTE DO SEU CÓDIGO VISUAL (Mapas) ---
+
+var precipitation_mensal = precipitacao_mensal_acum.reduce(ee.Reducer.mean()).rename('precipitation').clip(roi);
+
+var VisAnual = {
+  min: 0, // Ajustei o min para 0 para visualização mensal fazer mais sentido
+  max: 300, // Ajustei max para escala mensal (5000 era muito alto para média mensal)
+  palette: ['001137', '0aab1e', 'e7eb05', 'ff4a2d', 'e90000'],
+};
+
+Map.addLayer(precipitation_mensal, VisAnual, 'Média Mensal Histórica', 1);
+
+// Cálculo Anual (mantido do seu script)
+var annualPrecipitation = ee.ImageCollection.fromImages(
+    years.map(function (year) {
+        var yearData = precipitacao_mensal_acum.filter(ee.Filter.calendarRange(year, year, 'year')).sum().clip(roi);
+        return yearData.set('year', year)
+            .set('system:time_start', ee.Date.fromYMD(year, 1, 1).millis());
+    })
+);
+
+// Gráfico da série histórica completa
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: annualPrecipitation,
+    regions: roi,
+    reducer: ee.Reducer.mean(),
+    band: 'precipitation',
+    scale: 5000,
+    xProperty: 'system:time_start',
+    seriesProperty: 'NOME'
+}).setOptions({title: 'Precipitação Total Anual'});
+
+print(chartP);
