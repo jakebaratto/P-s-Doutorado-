@@ -1,0 +1,124 @@
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+//////Script para baixar dados de LAI reamostrada para 250 m
+///// Selecionando apenas as bandas com qualidade
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE desenvolvido por AmbiGEO (2023).
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
+
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso')
+Map.centerObject(roi,8)
+
+// Período de dados 
+
+var startdate = ee.Date.fromYMD(2003,1,1);
+var enddate = ee.Date.fromYMD(2022,12,31);
+
+var months = ee.List.sequence(1, 12)
+var years = ee.List.sequence(2003, 2022)
+
+
+////Dados Lai
+
+var laiCollection = ee.ImageCollection('MODIS/061/MOD15A2H')
+  .filterDate(startdate, enddate)
+  .filter(ee.Filter.calendarRange(1, 12, 'month'))
+  .select(['Lai_500m', 'FparLai_QC']);  // Usar banda de qualidade correta
+
+// Função para aplicar máscara de qualidade (bits 0–1 == 00), recortar e escalar
+function maskClipAndScale(image) {
+  var qc = image.select('FparLai_QC');
+  var goodQuality = qc.bitwiseAnd(3).eq(0);  // bits 0 e 1 iguais a 00
+  var laiScaled = image.select('Lai_500m')
+    .updateMask(goodQuality)
+    .multiply(0.1)  // Fator de escala
+    .clip(roi)
+    .copyProperties(image, ['system:time_start']);
+  return laiScaled;
+}
+
+// Aplicar a função à coleção de LAI
+var laiFiltered = laiCollection.map(maskClipAndScale);
+
+// Carregar coleção MODIS NDVI (MYD13Q1 - 250m)
+var ndviCollection = ee.ImageCollection('MODIS/006/MYD13Q1')
+  .filterDate(startdate, enddate)
+  .select('NDVI');
+
+// Obter a projeção da imagem NDVI
+var ndviProjection = ndviCollection.first().select('NDVI').projection();
+var scale = 250;
+
+// Função para reamostrar LAI para a escala do NDVI
+function resampleToNDVI(img) {
+  return img
+    .resample('bicubic')
+    .reproject({
+      crs: ndviProjection.crs(),
+      scale: scale
+    })
+    .rename('Lai_250m')
+    .copyProperties(img, ['system:time_start']);
+}
+
+// Aplicar reamostragem
+var laiResampled = laiFiltered.map(resampleToNDVI);
+
+// Verificar resultado
+print('Quantidade de imagens LAI reamostradas (250m):', laiResampled.size());
+
+// Calcular o IVs mensais 
+
+var IV_mensal_media =  ee.ImageCollection.fromImages( 
+years.map(function (y) { //função ano
+    return months.map(function(m) {//função mês aninhada em ano
+    //Defina a variável DNVI 
+      var IV_month = laiResampled.filter(ee.Filter.calendarRange(y, y, 'year'))//Filtro de ano
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))//Filtro de mês
+                    .mean() //acumulando os dados
+                    .clip(roi);//Recortando pela área de estudo
+                    
+      return IV_month.set('year', y)//Encerrando a função mês
+              .set('month', m) //inserir Mês
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1));//Definindo Data Ano.Mês e Dia
+                        
+    });
+  }).flatten() //empilha a coleção ano a ano, mês a mês
+              //Nivela coleções de coleções.
+);             
+              
+
+              
+print('Quantas imagens NDVI', IV_mensal_media .size())
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: IV_mensal_media,//Coleção mensal 
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'Lai_250m', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'NOME'})
+    .setOptions({
+      title: 'Lai_250m',
+      hAxis: {title: 'Intervalo de tempo'},
+      vAxis: {title: ''},
+      lineWidth: 1,
+      pointSize: 5,
+      pointShape: 'square',
+      series: {
+          0:  {pointShape: 'circle',color: 'blue'},
+          1: { pointShape: 'triangle', rotation: 180, color: 'DeepSkyBlue'},
+          2: {pointShape: 'square' , color: 'SteelBlue'},
+           3: {pointShape: 'square' , color: 'Green'}
+          }}
+      )
+    .setChartType('ScatterChart');  
+
+print(chartP)
