@@ -1,0 +1,171 @@
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+//////Script para baixar dados de temperatura do ar reamostrada para 250 m
+///// Selecionando apenas as bandas com qualidade
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE desenvolvido por AmbiGEO (2023).
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
+// =========================================================================
+// SCRIPT DE CLIMATOLOGIA - TEMPERATURA DO AR (ERA5)
+// =========================================================================
+
+// 1. DEFINIÇÃO DA ROI E PARÂMETROS
+var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+Map.centerObject(roi, 8);
+
+// Datas
+var startdate = ee.Date.fromYMD(2023, 1, 1);
+var enddate = ee.Date.fromYMD(2020, 12, 31);
+
+// Listas de tempo (Ajustei years para ir até 2020 para bater com o enddate)
+var months = ee.List.sequence(1, 12);
+var years = ee.List.sequence(2003, 2019);
+
+// ----- DADOS AUXILIARES (MODIS) -----
+// Mantido apenas para pegar a projeção conforme seu script original
+var modis = ee.ImageCollection('MODIS/006/MYD13Q1')
+  .filterDate(startdate, enddate)
+  .select('NDVI');
+var modisNDVI = modis.select('NDVI');
+var scale = 250;
+
+var resampleImage = function(img) {
+  return img.resample('bicubic').reproject({
+    crs: modisNDVI.first().projection(),
+    scale: scale
+  });
+};
+
+// ----- DADOS ERA5 -----
+var tar_era5 = ee.ImageCollection("ECMWF/ERA5/DAILY")
+  .select('mean_2m_air_temperature')
+  .filterDate(startdate, enddate)
+  .filterBounds(roi)
+  .map(resampleImage);
+
+// Converter Kelvin para Celsius
+var tar_f = function(img) {
+  return img.select('mean_2m_air_temperature')
+    .subtract(273.15)
+    .rename('temperature_C')
+    .clip(roi)
+    .copyProperties(img, ['system:time_start', 'system:time_end']);
+};
+
+var tar_ERA = tar_era5.map(tar_f);
+print('1 - Imagens ERA5 diárias:', tar_ERA.size());
+
+// 2. GERAÇÃO DA SÉRIE MENSAL (Série Temporal Completa)
+var createYearly = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return months.map(function(m) {
+      var createMonthlyImage = tar_ERA
+        .filter(ee.Filter.calendarRange(y, y, 'year'))
+        .filter(ee.Filter.calendarRange(m, m, 'month'))
+        .mean() // Média mensal das temperaturas diárias
+        .clip(roi);
+                  
+      return createMonthlyImage
+        .set('year', y)
+        .set('month', m)
+        .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+    });
+  }).flatten()
+);
+print(createYearly)
+// ... (mantenha o código anterior até a parte 2)
+
+// ... (Mantenha o código anterior das partes 1 e 2 igual)
+
+// 3. CÁLCULO DAS ESTATÍSTICAS (Com correção de erro e filtro de nulos)
+var estatisticas_mensais = ee.FeatureCollection(months.map(function(m) {
+  var colFiltrada = createYearly.filter(ee.Filter.eq('month', m));
+  
+  // 1º: Reduz espacialmente
+  var dadosEspaciais = colFiltrada.map(function(img) {
+    var reducao = img.reduceRegion({
+      reducer: ee.Reducer.mean(), 
+      geometry: roi,
+      scale: 500, // Escala ajustada para garantir leitura no polígono
+      bestEffort: true,
+      maxPixels: 1e13
+    });
+    
+    var val = reducao.get('temperature_C');
+    
+    return ee.Feature(null, {'temperature_C': val})
+        .set('system:time_start', img.get('system:time_start'));
+  });
+  
+  // FILTRO: Remove anos sem dados para evitar o erro "Dictionary does not contain key"
+  dadosEspaciais = dadosEspaciais.filter(ee.Filter.notNull(['temperature_C']));
+  
+  // 2º: Reduz temporalmente
+  var stats = dadosEspaciais.reduceColumns({
+    reducer: ee.Reducer.mean().combine({
+      reducer2: ee.Reducer.min(),
+      sharedInputs: true
+    }).combine({
+      reducer2: ee.Reducer.max(),
+      sharedInputs: true
+    }),
+    selectors: ['temperature_C']
+  });
+  
+  return ee.Feature(null).set({
+    'Mes': m,
+    'Temp_Media': stats.get('mean'),
+    'Temp_Minima': stats.get('min'),
+    'Temp_Maxima': stats.get('max')
+  });
+}));
+
+// Filtra meses vazios caso existam
+estatisticas_mensais = estatisticas_mensais.filter(ee.Filter.notNull(['Temp_Media']));
+
+
+// 4. IMPRIMIR GRÁFICO (TUDO EM LINHAS)
+print('--- CLIMATOLOGIA TÉRMICA (LINHAS) ---');
+
+var chartResumo = ui.Chart.feature.byFeature(
+    estatisticas_mensais, 
+    'Mes', 
+    ['Temp_Media', 'Temp_Minima', 'Temp_Maxima'] // Ordem das séries
+  )
+  .setChartType('LineChart') // AGORA TUDO É LINHA
+  .setOptions({
+    title: 'Variação mensal da Temperatura do ar (1979-2019)',
+    hAxis: {title: 'Mês', ticks: [1,2,3,4,5,6,7,8,9,10,11,12]},
+    vAxis: {title: 'Temperatura (°C)'},
+    lineWidth: 3, // Espessura padrão das linhas
+    series: {
+      0: { // Temp_Media
+        color: 'f09000', // Laranja
+        lineWidth: 4,    // Linha da média mais grossa
+        labelInLegend: 'Média Mensal'
+      }, 
+      1: { // Temp_Minima
+        color: '0000ff', // Azul
+        lineDashStyle: [4, 4], // Tracejada
+        lineWidth: 2,    // Mais fina
+        pointSize: 3,
+        labelInLegend: 'Mínima Histórica'
+      }, 
+      2: { // Temp_Maxima
+        color: 'ff0000', // Vermelho
+        lineDashStyle: [4, 4], // Tracejada
+        lineWidth: 2,    // Mais fina
+        pointSize: 3,
+        labelInLegend: 'Máxima Histórica'
+      }
+    }
+  });
+
+print(chartResumo);
+print('Tabela de Dados:', estatisticas_mensais);
