@@ -1,0 +1,132 @@
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL
+///         DO SISTEMA COSTEIRO CANANÉIA-IGUAPE, SP
+///==============================================================================
+/// DESCRIÇÃO:
+//////Script para baixar dados de temperatura de superfície reamostrada para 250 m
+///// Selecionando apenas as bandas com qualidade
+///Script criado com base no curso Google Earth Engine: do Zero ao avançado da Ferramenta GEE desenvolvido por AmbiGEO (2023).
+/// CONTEXTO ACADÊMICO:
+///Desenvolvimento de Pós-Doutorado no Departamento de Geografia da USP.
+/// AUTORIA E FINANCIAMENTO:
+/// Pesquisadora Responsável: Dra. Jakeline Baratto
+///Financiamento: FAPESP (Processo: 2022/02383-3)
+
+
+
+// Definição da área de interesse
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso');
+
+// Desenhando o Contorno da ROI
+var empty = ee.Image().byte();
+var contorno = empty.paint({
+  featureCollection: roi,
+  color: 1,
+  width: 2
+});
+
+Map.addLayer(contorno, {palette:['red']});
+Map.centerObject(roi);
+
+var startdate = ee.Date.fromYMD(2010,1,1);
+var enddate = ee.Date.fromYMD(2014,12,31);
+
+var months = ee.List.sequence(1, 12);
+var years = ee.List.sequence(2010, 2013);
+
+/// DADOS MODIS PARA A REAMOSTRAGEM
+var modis = ee.ImageCollection('MODIS/006/MYD13Q1');
+var modisFiltered = modis.filterDate(startdate, enddate);
+var modisNDVI = modisFiltered.select('NDVI');
+var scale = 250;
+
+// --- Nova Função: Filtro de Qualidade (QC) ---
+// Função para extrair a banda de qualidade, e criar uma máscara
+function maskClouds(image) {
+  var qa = image.select('QC_Day');
+  
+  // Bits 0-1 (QC)
+  // 0: Boa Qualidade, Nenhuma Anomalia Detectada
+  // 1: Qualidade Média, Não é ideal, mas pode ser usada
+  var goodQuality = qa.bitwiseAnd(3).lte(1);
+
+  // Máscara com base na banda de qualidade
+  return image.updateMask(goodQuality);
+}
+
+// Função para calcular a LST
+function temp_mean_day(image){
+  var lst = image.select('LST_Day_1km').multiply(0.02).subtract(273.15).rename('LST');
+  return image.addBands(lst).clip(roi)
+              .copyProperties(image, image.propertyNames())
+              .set({date: image.date().format('yyyy-MM-dd')});
+}
+
+/// Dados LST modis AGUA- troquei
+var temperatureCollection = ee.ImageCollection("MODIS/061/MYD11A2")
+    .select(['LST_Day_1km', 'LST_Night_1km', 'QC_Day']) // Adicionando a banda de qualidade
+    .filterDate(startdate,enddate)
+    .filterBounds(roi)
+    .map(maskClouds) // Aplica o filtro de qualidade primeiro
+    .map(temp_mean_day); // Em seguida, calcula a LST
+
+var LST = temperatureCollection.select('LST');
+
+// Função para reamostrar
+var resampleImage = function(img) {
+  var resampled = img.resample('bicubic').reproject({
+    crs: modisNDVI.first().projection(),
+    scale: scale
+  });
+  return resampled;
+};
+
+// Mapear a função de reamostragem para a coleção MODIS LST
+var LSTResampled = LST.map(resampleImage);
+print(LSTResampled);
+
+var temperature = LSTResampled.select('LST');
+
+/// Dados mensais de LST
+var createYearly_LST = ee.ImageCollection.fromImages(
+    years.map(function (y) {
+      return months.map(function(m) {
+        var createMonthlyImage_temp = temperature.filter(ee.Filter.calendarRange(y, y, 'year'))
+                                                 .filter(ee.Filter.calendarRange(m, m, 'month'))
+                                                 .mean()
+                                                 .clip(roi);
+        return createMonthlyImage_temp.set('year', y)
+                                      .set('month', m)
+                                      .set('system:time_start', ee.Date.fromYMD(y, m, 1));
+      });
+    }).flatten()
+);
+
+// print('Quantas imagens temperatura', createYearly_LST.size())
+
+// Gráfico Temperatura mensal
+var chart = ui.Chart.image.seriesByRegion({
+    imageCollection: createYearly_LST,
+    regions: roi,
+    reducer: ee.Reducer.mean(),
+    band: 'LST',
+    scale: 250,
+    xProperty: 'system:time_start',
+    seriesProperty: 'Name'})
+    .setOptions({
+      title: 'Temperatura mensal ao longo dos anos',
+      hAxis: {title: 'Intervalo de tempo'},
+      vAxis: {title: 'ºC'},
+      lineWidth: 1,
+      pointSize: 5,
+      pointShape: 'square',
+      series: {
+          0: {pointShape: 'circle',color: 'blue'},
+          1: { pointShape: 'triangle', rotation: 180, color: 'DeepSkyBlue'},
+          2: {pointShape: 'square', color: 'SteelBlue'},
+          3: {pointShape: 'square', color: 'Green'}
+      }}
+    )
+    .setChartType('ScatterChart');
+
+print(chart);
