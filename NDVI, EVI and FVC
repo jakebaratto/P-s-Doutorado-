@@ -1,0 +1,116 @@
+/// ==============================================================================
+/// PROJETO: INFLUÊNCIA DOS FATORES MACROCLIMÁTICOS NO MANGUEZAL (SCCI)
+/// PESQUISADORA: Dra. Jakeline Baratto | USP / FAPESP
+/// DESCRIÇÃO: Processamento de NDVI, EVI e FVC (Mensal e Anual)
+///==============================================================================
+
+// 1. ÁREA DE ESTUDO
+var areaEstudo = ee.FeatureCollection('users/jakelinebarattogeo/mangueSSI_WGS84_disso');
+Map.addLayer(areaEstudo, {color: 'red'}, 'Área de Estudo');
+Map.centerObject(areaEstudo, 10);
+
+// 2. PERÍODO E COLEÇÃO
+var startdate = ee.Date.fromYMD(2003, 1, 1);
+var enddate = ee.Date.fromYMD(2025, 12, 31);
+var years = ee.List.sequence(2003, 2024);
+var months = ee.List.sequence(1, 12);
+
+var modis = ee.ImageCollection('MODIS/061/MOD13Q1')
+  .filterDate(startdate, enddate)
+  .select(['NDVI', 'EVI', 'SummaryQA']);
+
+// 3. MÁSCARA, ESCALA E CÁLCULO FVC (LINEAR MIXTURE MODEL)
+var ndviSoil = ee.Number(0.05); 
+var ndviVeg = ee.Number(0.86);
+
+var processedCol = modis.map(function(image) {
+  var qa = image.select('SummaryQA');
+  var mask = qa.eq(0); // Apenas dados de alta qualidade
+  
+  // Escalonamento e Clipping
+  var rescaled = image.updateMask(mask).clip(areaEstudo)
+    .select(['NDVI', 'EVI']).multiply(0.0001);
+    
+  var ndvi = rescaled.select('NDVI');
+  
+  // Cálculo do FVC conforme artigo Springer 2025
+  var fvc = ndvi.subtract(ndviSoil)
+    .divide(ndviVeg.subtract(ndviSoil))
+    .rename('FVC')
+    .clamp(0, 1); // Garante limite físico entre 0 e 1
+
+  return rescaled.addBands(fvc)
+    .copyProperties(image, ['system:time_start']);
+});
+
+// 4. PROCESSAMENTO ANUAL
+var annualCol = ee.ImageCollection.fromImages(
+  years.map(function(y) {
+    var year = ee.Number(y);
+    return processedCol.filter(ee.Filter.calendarRange(year, year, 'year'))
+      .mean()
+      .set('year', year)
+      .set('system:time_start', ee.Date.fromYMD(year, 1, 1).millis());
+  })
+);
+
+// 5. PROCESSAMENTO MENSAL
+var monthlyCol = ee.ImageCollection.fromImages(
+  years.map(function(y) {
+    var year = ee.Number(y);
+    return months.map(function(m) {
+      var month = ee.Number(m);
+      return processedCol.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .filter(ee.Filter.calendarRange(month, month, 'month'))
+        .mean()
+        .set('year', year)
+        .set('month', month)
+        .set('system:time_start', ee.Date.fromYMD(year, month, 1).millis());
+    });
+  }).flatten()
+);
+
+// 6. EXTRAÇÃO DE ESTATÍSTICAS (TABELAS)
+var getStats = function(image) {
+  var stats = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: areaEstudo,
+    scale: 250,
+    bestEffort: true
+  });
+  return ee.Feature(null, stats.combine({
+    'date': ee.Date(image.get('system:time_start')).format('YYYY-MM-dd'),
+    'label': ee.Date(image.get('system:time_start')).format('YYYY-MM')
+  }));
+};
+
+var annualTable = annualCol.map(getStats);
+var monthlyTable = monthlyCol.map(getStats);
+
+// 7. GRÁFICOS
+print('Série Anual (Médias):', ui.Chart.feature.byFeature(annualTable, 'date', ['NDVI', 'EVI', 'FVC']));
+print('Série Mensal (Sazonalidade):', ui.Chart.feature.byFeature(monthlyTable, 'date', ['NDVI', 'EVI', 'FVC']));
+
+// 8. EXPORTAÇÕES (CSV E RASTER)
+Export.table.toDrive({
+  collection: annualTable,
+  description: 'SCCI_Annual_Metrics',
+  folder: 'GEE_Exports_USP',
+  fileFormat: 'CSV'
+});
+
+Export.table.toDrive({
+  collection: monthlyTable,
+  description: 'SCCI_Monthly_Metrics',
+  folder: 'GEE_Exports_USP',
+  fileFormat: 'CSV'
+});
+
+// Exporta a média histórica espacial do FVC
+Export.image.toDrive({
+  image: processedCol.select('FVC').mean(),
+  description: 'FVC_Mean_Spatial_SCCI',
+  scale: 250,
+  region: areaEstudo.geometry(),
+  fileFormat: 'GeoTIFF'
+});
