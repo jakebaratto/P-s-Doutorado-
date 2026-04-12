@@ -1,0 +1,117 @@
+/// ========================================================================
+/// PROJETO: DINÂMICA DO MANGUEZAL NO SCCI (2003-2024)
+/// PESQUISADORA: Dra. Jakeline Baratto | USP / FAPESP
+/// OBJETIVO: Exportação de Bandas (2003, 2024, Médias) e Áreas de Ganho/Perda
+/// ========================================================================
+
+// 1. Definições de Período
+var startyear = 2003;
+var endyear = 2024;
+var years = ee.List.sequence(startyear, endyear);
+
+// 2. Área de Estudo
+var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+Map.centerObject(roi, 10);
+
+// 3. Função de Processamento (Máscara de Qualidade e Escalonamento)
+function processModis(image) {
+  var QA = image.select('DetailedQA');
+  var mask = QA.bitwiseAnd(3).eq(0); // Filtro de alta qualidade
+  var scaled = image.select(['NDVI', 'EVI']).multiply(0.0001);
+  return scaled.updateMask(mask).copyProperties(image, ['system:time_start']);
+}
+
+// Carregar Coleção MODIS
+var dataset = ee.ImageCollection('MODIS/061/MOD13Q1')
+              .filterBounds(roi)
+              .map(processModis);
+
+// 4. Criação da Coleção Anual
+var annualColl = ee.ImageCollection.fromImages(years.map(function(y) {
+  var anual = dataset.filter(ee.Filter.calendarRange(y, y, 'year'))
+                     .mean()
+                     .clip(roi);
+  return anual.set('year', y).set('system:time_start', ee.Date.fromYMD(y, 1, 1).millis());
+}));
+
+// 5. Geração das Imagens Base (Seleção explícita de bandas para evitar erro)
+var indices = ['NDVI', 'EVI'];
+var mlt = annualColl.select(indices).mean(); 
+var img2003 = annualColl.filter(ee.Filter.eq('year', 2003)).select(indices).mean();
+var img2024 = annualColl.filter(ee.Filter.eq('year', 2024)).select(indices).mean();
+
+// Parâmetros de Visualização e Limiar
+var visParams = {min: 0.2, max: 0.85, palette: ['red', 'yellow', 'green']};
+var limiar = 0.1;
+
+// 6. Loop de Processamento: Mapas, Áreas e Exportações Simultâneas
+indices.forEach(function(idx) {
+  
+  // --- A. Adição de Camadas ao Mapa ---
+  Map.addLayer(img2003.select(idx), visParams, idx + ' 2003', false);
+  Map.addLayer(img2024.select(idx), visParams, idx + ' 2024', false);
+  Map.addLayer(mlt.select(idx), visParams, 'Média ' + idx + ' (2003-2024)', false);
+
+  // --- B. Exportação das Bandas Individuais (TIFs para o Artigo) ---
+  var folderName = 'Analise_SCCI_Baratto_2024';
+  
+  Export.image.toDrive({
+    image: img2003.select(idx),
+    description: idx + '_2003_SCCI',
+    folder: folderName, region: roi, scale: 250, maxPixels: 1e13
+  });
+
+  Export.image.toDrive({
+    image: img2024.select(idx),
+    description: idx + '_2024_SCCI',
+    folder: folderName, region: roi, scale: 250, maxPixels: 1e13
+  });
+
+  Export.image.toDrive({
+    image: mlt.select(idx),
+    description: idx + '_Media_Historica_SCCI',
+    folder: folderName, region: roi, scale: 250, maxPixels: 1e13
+  });
+
+  // --- C. Detecção de Mudanças (2024 vs Média) ---
+  var anomalia = img2024.select(idx).subtract(mlt.select(idx));
+  var perda = anomalia.lte(-limiar).selfMask();
+  var ganho = anomalia.gte(limiar).selfMask();
+  
+  Map.addLayer(perda, {palette: 'red'}, 'Perda ' + idx + ' (2024)');
+  Map.addLayer(ganho, {palette: 'green'}, 'Ganho ' + idx + ' (2024)');
+
+  // --- D. Cálculo de Áreas (km²) no Console ---
+  var statsPerda = perda.multiply(ee.Image.pixelArea()).divide(1e6).reduceRegion({
+    reducer: ee.Reducer.sum(),
+    geometry: roi,
+    scale: 250,
+    maxPixels: 1e13
+  });
+
+  var statsGanho = ganho.multiply(ee.Image.pixelArea()).divide(1e6).reduceRegion({
+    reducer: ee.Reducer.sum(),
+    geometry: roi,
+    scale: 250,
+    maxPixels: 1e13
+  });
+
+  print('--- Estatísticas ' + idx + ' (2024 vs Média) ---');
+  print('Área de Perda (km²):', statsPerda.get(idx));
+  print('Área de Ganho (km²):', statsGanho.get(idx));
+
+  // --- E. Exportação das Máscaras de Mudança ---
+  Export.image.toDrive({
+    image: perda,
+    description: 'Mascara_Perda_' + idx + '_2024',
+    folder: folderName, region: roi, scale: 250, maxPixels: 1e13
+  });
+
+  Export.image.toDrive({
+    image: ganho,
+    description: 'Mascara_Ganho_' + idx + '_2024',
+    folder: folderName, region: roi, scale: 250, maxPixels: 1e13
+  });
+});
+
+print('Processamento concluído. Verifique a aba "Tasks" para as exportações e o "Console" para as áreas.');
