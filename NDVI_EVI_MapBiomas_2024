@@ -1,0 +1,123 @@
+/// Script Unificado: Extração de Séries Temporais (NDVI/EVI) para Vegetação Nativa e Manguezal
+/// Baseado em AmbiGEO (2023) | Adaptado para Pós-Doutorado USP - Dra. Jakeline Baratto
+/// Financiamento: FAPESP (Processo: 2022/02383-3)
+
+// --- 1. CONFIGURAÇÕES INICIAIS E ROI ---
+var mapbiomasIntegration = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10_1/mapbiomas_brazil_collection10_1_coverage_v1');
+var roi = ee.FeatureCollection('projects/ee-jakelinebarattogeo/assets/SCCI_disso');
+
+Map.addLayer(roi, {color: 'blue'}, 'ROI Principal');
+Map.centerObject(roi, 10);
+
+// --- 2. DEFINIÇÃO DAS CLASSES DE INTERESSE ---
+// Grupo A: Vegetação Nativa (Floresta e Restingas)
+var FORMACAO_FLORESTAL_ID = 3;
+var RESTINGA_ARBORIZADA_ID = 4;
+var RESTINGA_HERBACEA_ID = 34;
+
+// Grupo B: Ecossistema de Manguezal
+var MANGUE_CLASS_ID = 5;
+var APICUM_CLASS_ID = 32;
+
+// Período de Anos
+var startYear = 2003;
+var endYear = 2024;
+var years = ee.List.sequence(startYear, endYear);
+
+// --- 3. PREPARAÇÃO DA COLEÇÃO ANUAL ---
+var mapbiomasAnnualCollection = ee.ImageCollection(
+  years.map(function(year) {
+    var yearStr = ee.Number(year).format('%d');
+    var bandName = ee.String('classification_').cat(yearStr);
+    return mapbiomasIntegration.select(bandName).set('year', year);
+  })
+);
+
+// --- 4. FUNÇÃO DE CÁLCULO UNIFICADA ---
+var calculateAnnualMeans = function(year) {
+  year = ee.Number(year);
+  
+  // A) Obter classificação do ano
+  var classificationImage = mapbiomasAnnualCollection
+                              .filter(ee.Filter.eq('year', year))
+                              .first();
+
+  // B) Criar Máscaras Grupo A (Nativa/Restinga)
+  var maskA = classificationImage.eq(FORMACAO_FLORESTAL_ID)
+                .or(classificationImage.eq(RESTINGA_ARBORIZADA_ID))
+                .or(classificationImage.eq(RESTINGA_HERBACEA_ID))
+                .selfMask().clip(roi);
+
+  // C) Criar Máscaras Grupo B (Mangue/Apicum)
+  var maskB = classificationImage.eq(MANGUE_CLASS_ID)
+                .or(classificationImage.eq(APICUM_CLASS_ID))
+                .selfMask().clip(roi);
+
+  // D) Processar MODIS (QA e Escala)
+  var modis = ee.ImageCollection('MODIS/061/MOD13Q1')
+                  .filterDate(ee.Date.fromYMD(year, 1, 1), ee.Date.fromYMD(year, 12, 31))
+                  .filterBounds(roi);
+
+  var maskAndScale = function(image) {
+    var qualityMask = image.select('SummaryQA').eq(0); 
+    return image.updateMask(qualityMask)
+                .select(['NDVI', 'EVI'])
+                .multiply(0.0001)
+                .copyProperties(image, ['system:time_start']);
+  };
+
+  var modisMetrics = modis.map(maskAndScale).mean().clip(roi);
+
+  // E) Redução Regional para Grupo A
+  var reducedA = modisMetrics.updateMask(maskA).reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: roi.geometry(),
+    scale: 250,
+    maxPixels: 1e10
+  });
+
+  // F) Redução Regional para Grupo B
+  var reducedB = modisMetrics.updateMask(maskB).reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: roi.geometry(),
+    scale: 250,
+    maxPixels: 1e10
+  });
+
+  return ee.Feature(null, {
+    'year': year,
+    'NDVI_Native': reducedA.get('NDVI'),
+    'EVI_Native': reducedA.get('EVI'),
+    'NDVI_Mangrove': reducedB.get('NDVI'),
+    'EVI_Mangrove': reducedB.get('EVI')
+  });
+};
+
+// --- 5. EXECUÇÃO E EXPORTAÇÃO ---
+var results = years.map(calculateAnnualMeans);
+var finalCollection = ee.FeatureCollection(results);
+
+print('Tabela de Médias Unificada:', finalCollection);
+
+Export.table.toDrive({
+  collection: finalCollection,
+  description: 'Annual_Mean_NDVI_EVI_Unified_CICS',
+  folder: 'GEE_Exports_USP',
+  fileNamePrefix: 'timeseries_ndvi_evi_combined',
+  fileFormat: 'CSV',
+  selectors: ['year', 'NDVI_Native', 'EVI_Native', 'NDVI_Mangrove', 'EVI_Mangrove']
+});
+
+// --- 6. VISUALIZAÇÃO ESPACIAL (EXEMPLO 2020) ---
+var yearVis = 2020;
+var imgVis = mapbiomasAnnualCollection.filter(ee.Filter.eq('year', yearVis)).first();
+
+var maskA_Vis = imgVis.eq(FORMACAO_FLORESTAL_ID).or(imgVis.eq(RESTINGA_ARBORIZADA_ID)).or(imgVis.eq(RESTINGA_HERBACEA_ID)).selfMask();
+var maskB_Vis = imgVis.eq(MANGUE_CLASS_ID).or(imgVis.eq(APICUM_CLASS_ID)).selfMask();
+
+Map.addLayer(maskA_Vis.clip(roi), {palette: ['#006400']}, 'Grupo Nativa/Restinga ('+yearVis+')');
+Map.addLayer(maskB_Vis.clip(roi), {palette: ['#0000FF']}, 'Grupo Mangue/Apicum ('+yearVis+')');
+
+// --- 7. GRÁFICOS ---
+print(ui.Chart.feature.byFeature(finalCollection, 'year', ['NDVI_Native', 'NDVI_Mangrove'])
+  .setOptions({title: 'Comparativo NDVI Anual', vAxis: {title: 'Valor'}, hAxis: {title: 'Ano'}}));
