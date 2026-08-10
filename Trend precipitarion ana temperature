@@ -1,0 +1,222 @@
+# # # ==============================================================================
+# SCRIPT DE PÓS-DOUTORADO - DEPARTAMENTO DE GEOGRAFIA (USP)
+# ==============================================================================
+# 
+# Pesquisadora:  Dra. Jakeline Baratto
+# Financiamento: FAPESP (Processo: 2022/02383-# ============================================================================
+# # Objetivo do Script: ANÁLISE DE INDICADORES CLIMÁTICOS EM MÚLTIPLAS ESCALAS
+# (Mensal, Sazonal e Anual)
+# ==============================================================================
+
+# --- 1. INSTALAR E CARREGAR PACOTES ---
+#-------------------------------------------------------------------------------
+if (!require(pacman)) install.packages("pacman")
+pacman::p_load(dplyr, readr, tidyr, lubridate, zoo, stringr, trend, purrr, modifiedmk)
+cat("Pacotes carregados. Iniciando o script...\n\n")
+
+# --- 2. CONFIGURAÇÕES PRINCIPAIS ---
+#-------------------------------------------------------------------------------
+# CAMINHO PARA O SEU ARQUIVO DE DADOS DIÁRIOS BRUTOS
+file_path_input <- "G:/My Drive/PD - USP/04_Artigos/Artigo Evapo/BD/BD_SPEI_1981-2022/BD_SPEI_1981-2022.csv"
+# PASTA RAIZ ONDE OS RESULTADOS SERÃO SALVOS
+base_output_root_folder <- "G:/My Drive/PD - USP/04_Artigos/Artigo Evapo/BD/BD_SPEI_1981-2022"
+
+indicadores_climaticos <- c("PRCPTOT", "RX1Day", "RX3Day", "RX5Day", "SDII",
+                            "R10mm", "R20mm", "R60mm", "R80mm", "R100mm",
+                            "CDD", "CWD", "R95pTOT", "R99pTOT")
+month_map_en <- setNames(month.abb, 1:12)
+
+if (!dir.exists(base_output_root_folder)) dir.create(base_output_root_folder, recursive = TRUE)
+
+BASE_PERIOD_START <- 1981
+BASE_PERIOD_END <- 2010
+
+# --- 3. CARREGAR E PRÉ-PROCESSAR DADOS DIÁRIOS ---
+#-------------------------------------------------------------------------------
+cat("Carregando e pré-processando dados diários...\n")
+dados_diarios_estacao <- readr::read_delim(
+  file_path_input,
+  delim = ";",
+  locale = readr::locale(decimal_mark = ","),
+  na = c("", "-99,9", "-99.9"),
+  show_col_types = FALSE
+) %>%
+  mutate(
+    across(c(year, month, day), as.integer),
+    date = make_date(year, month, day)
+  ) %>%
+  select(-year, -month, -day) %>%
+  rename(prcp_cleaned = prcp) %>%
+  mutate(prcp_cleaned = if_else(prcp_cleaned %in% c(-99.9, -99.90), NA_real_, prcp_cleaned))
+
+# --- 4. FUNÇÃO DE ANÁLISE ESTATÍSTICA (Mantida) ---
+#-------------------------------------------------------------------------------
+calculate_all_tests <- function(time_series_df) {
+  ok <- !is.na(time_series_df$Value)
+  ts_values <- as.numeric(time_series_df$Value[ok])
+  ts_years <- as.numeric(time_series_df$year[ok])
+
+  if (length(ts_values) < 8 || !is.finite(sd(ts_values)) || sd(ts_values) == 0) {
+    return(tibble())
+  }
+
+  sen_pre <- trend::sens.slope(ts_values)
+  detrended <- ts_values - as.numeric(sen_pre$estimates) * seq_along(ts_values)
+  acf1 <- as.numeric(stats::acf(rank(detrended), lag.max = 1, plot = FALSE)$acf[2])
+  acf_limit <- stats::qnorm(0.975) / sqrt(length(ts_values))
+  has_autocorrelation <- is.finite(acf1) && abs(acf1) > acf_limit
+
+  if (has_autocorrelation) {
+    mk_mod <- modifiedmk::mmkh(ts_values)
+    tau <- as.numeric(mk_mod[["Tau"]])
+    p_mk <- as.numeric(mk_mod[["new P-value"]])
+    zmk <- as.numeric(mk_mod[["Zc"]])
+    sen_value <- as.numeric(mk_mod[["Sen's slope"]])
+    mk_method <- "Hamed-Rao modified Mann-Kendall"
+  } else {
+    mk_res <- trend::mk.test(ts_values)
+    tau <- as.numeric(mk_res$estimates["tau"])
+    p_mk <- mk_res$p.value
+    zmk <- as.numeric(mk_res$statistic)
+    sen_value <- as.numeric(trend::sens.slope(ts_values)$estimates)
+    mk_method <- "Original Mann-Kendall"
+  }
+
+  pettitt_res <- tryCatch(trend::pettitt.test(ts_values), error = function(e) NULL)
+  snh_res <- tryCatch(trend::snh.test(ts_values), error = function(e) NULL)
+  br_res <- tryCatch(trend::br.test(ts_values), error = function(e) NULL)
+  lm_model <- lm(ts_values ~ ts_years)
+  lm_summary <- summary(lm_model)
+
+  get_year <- function(result, years_vec) {
+    if (is.null(result) || is.null(result$estimate) || is.na(result$estimate[1])) return(NA_integer_)
+    index <- as.integer(result$estimate[1])
+    if (index > 0 && index <= length(years_vec)) return(years_vec[index])
+    NA_integer_
+  }
+
+  tibble(
+    N = length(ts_values),
+    ACF1 = acf1,
+    ACF_Limit = acf_limit,
+    Autocorrelation = has_autocorrelation,
+    MK_Method = mk_method,
+    TAU = tau,
+    P.VA_MK = p_mk,
+    ZMK = zmk,
+    Sens_Slope = sen_value,
+    LM_Slope = lm_summary$coefficients[2,1],
+    P.VA_LM = lm_summary$coefficients[2,4],
+    K_Pettitt = if(!is.null(pettitt_res)) pettitt_res$statistic else NA,
+    P.VA_Pettitt = if(!is.null(pettitt_res)) pettitt_res$p.value else NA,
+    Ano_Ruptura_Pettitt = get_year(pettitt_res, ts_years),
+    SNHT_Max_Statistic = if(!is.null(snh_res)) snh_res$statistic else NA,
+    P.VA_SNHT = if(!is.null(snh_res)) snh_res$p.value else NA,
+    Ano_Ruptura_SNHT = get_year(snh_res, ts_years),
+    R_Buishand = if(!is.null(br_res)) br_res$statistic else NA,
+    P.VA_Buishand = if(!is.null(br_res)) br_res$p.value else NA,
+    Ano_Ruptura_Buishand = get_year(br_res, ts_years)
+  )
+}
+
+# --- 5. FUNÇÃO DE ANÁLISE MULTI-ESCALA ---
+#-------------------------------------------------------------------------------
+run_multi_scale_analysis <- function(daily_data) {
+  cat("\n--- INICIANDO ANÁLISE MULTI-ESCALA (Mensal, Sazonal, Anual) ---\n")
+  output_folder <- file.path(base_output_root_folder, "Analysis_Results_Multi_Scale")
+  dir.create(output_folder, showWarnings = FALSE, recursive = TRUE)
+  
+  # Adiciona colunas de tempo, flags e somas móveis
+  single_station_data <- daily_data %>%
+    mutate(
+      year = year(date), month = month(date),
+      # Adiciona uma coluna de estação (season) para o agrupamento sazonal
+      season = case_when(
+        month %in% 1:3  ~ "JFM",
+        month %in% 4:6  ~ "AMJ",
+        month %in% 7:9  ~ "JAS",
+        month %in% 10:12 ~ "OND"
+      ),
+      CDD_flag = if_else(prcp_cleaned < 1 & !is.na(prcp_cleaned), 1, 0),
+      CWD_flag = if_else(prcp_cleaned >= 1 & !is.na(prcp_cleaned), 1, 0)
+    ) %>%
+    arrange(date) %>%
+    mutate(
+      rollsum_3day = zoo::rollsumr(prcp_cleaned, k = 3, fill = NA),
+      rollsum_5day = zoo::rollsumr(prcp_cleaned, k = 5, fill = NA)
+    )
+  
+  cat("Calculando percentis de precipitação...\n")
+  percentile_base <- single_station_data %>%
+    filter(
+      year >= BASE_PERIOD_START,
+      year <= BASE_PERIOD_END,
+      prcp_cleaned >= 1
+    )
+
+  p95 <- quantile(percentile_base$prcp_cleaned, 0.95, na.rm = TRUE)
+  p99 <- quantile(percentile_base$prcp_cleaned, 0.99, na.rm = TRUE)
+  
+  # Função auxiliar para calcular os indicadores para qualquer grupo de dados
+  calculate_indicators <- function(data) {
+    summarise(
+      data,
+      PRCPTOT = sum(prcp_cleaned[prcp_cleaned >= 1], na.rm = TRUE),
+      RX1Day = if(all(is.na(prcp_cleaned))) NA else max(prcp_cleaned, na.rm = TRUE),
+      RX3Day = if(all(is.na(rollsum_3day))) NA else max(rollsum_3day, na.rm = TRUE),
+      RX5Day = if(all(is.na(rollsum_5day))) NA else max(rollsum_5day, na.rm = TRUE),
+      SDII = if(sum(prcp_cleaned >= 1, na.rm = TRUE) > 0) sum(prcp_cleaned, na.rm = TRUE) / sum(prcp_cleaned >= 1, na.rm = TRUE) else NA,
+      R10mm = sum(prcp_cleaned >= 10, na.rm = TRUE),
+      R20mm = sum(prcp_cleaned >= 20, na.rm = TRUE),
+      R60mm = sum(prcp_cleaned >= 60, na.rm = TRUE),
+      R80mm = sum(prcp_cleaned >= 80, na.rm = TRUE),
+      R100mm = sum(prcp_cleaned >= 100, na.rm = TRUE),
+      CDD = max(rle(CDD_flag)$lengths[rle(CDD_flag)$values == 1], 0, na.rm = TRUE),
+      CWD = max(rle(CWD_flag)$lengths[rle(CWD_flag)$values == 1], 0, na.rm = TRUE),
+      R95pTOT = sum(prcp_cleaned[prcp_cleaned >= p95], na.rm = TRUE),
+      R99pTOT = sum(prcp_cleaned[prcp_cleaned >= p99], na.rm = TRUE),
+      .groups = 'drop'
+    )
+  }
+  
+  # 1. Resumo ANUAL
+  cat("Calculando indicadores anuais...\n")
+  summarise_annual <- single_station_data %>% group_by(year) %>% calculate_indicators() %>% mutate(Scale = "Anual")
+  
+  # 2. Resumo SAZONAL
+  cat("Calculando indicadores sazonais...\n")
+  summarise_seasonal <- single_station_data %>% group_by(year, season) %>% calculate_indicators() %>% rename(Scale = season)
+  
+  # 3. Resumo MENSAL
+  cat("Calculando indicadores mensais...\n")
+  summarise_monthly <- single_station_data %>% group_by(year, month) %>% calculate_indicators() %>% mutate(Scale = month_map_en[month]) %>% select(-month)
+  
+  # Combina todas as escalas em um único dataframe
+  cat("Combinando resultados de todas as escalas...\n")
+  all_scales_timeseries <- bind_rows(summarise_annual, summarise_seasonal, summarise_monthly) %>%
+    pivot_longer(all_of(indicadores_climaticos), names_to = "Indicador", values_to = "Value")
+  
+  cat("Calculando testes estatísticos para todas as escalas...\n")
+  all_tests_df <- all_scales_timeseries %>%
+    group_by(Indicador, Scale) %>%
+    nest(data_ts = c(year, Value)) %>%
+    mutate(test_results = purrr::map(data_ts, calculate_all_tests)) %>%
+    unnest(test_results) %>%
+    select(-data_ts) %>%
+    ungroup()
+  
+  # --- SEÇÃO DE SALVAMENTO ---
+  cat("Salvando resultados da análise multi-escala...\n")
+  write.csv2(all_tests_df, file.path(output_folder, "Multi_Scale_All_Tests_Results.csv"), row.names = FALSE, na = "-99,9")
+  cat("Resultados dos testes salvos.\n")
+  
+  write.csv2(all_scales_timeseries, file.path(output_folder, "Multi_Scale_Aggregated_Indicators.csv"), row.names = FALSE, na = "-99,9")
+  cat("Indicadores agregados salvos.\n")
+  
+  cat("Análise multi-escala concluída.\n")
+}
+
+# --- 6. BLOCO DE EXECUÇÃO PRINCIPAL ---
+#-------------------------------------------------------------------------------
+run_multi_scale_analysis(dados_diarios_estacao)
+cat("\nAnálise concluída com sucesso.\n")
